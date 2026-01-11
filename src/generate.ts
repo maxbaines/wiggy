@@ -25,24 +25,29 @@ Your job is to take a natural language description of what needs to be built and
 
 ## PRD Format
 
-Generate a JSON PRD with this structure:
-{
-  "name": "Project Name",
-  "description": "Brief description of the project",
-  "items": [
-    {
-      "id": "1",
-      "category": "setup|architecture|functional|testing|documentation|polish",
-      "description": "Clear, actionable task description",
-      "steps": [
-        "Specific acceptance criteria 1",
-        "Specific acceptance criteria 2"
-      ],
-      "priority": "high|medium|low",
-      "passes": false
-    }
-  ]
-}
+Generate a Markdown PRD with this structure:
+
+# Project Name
+
+Brief description of the project
+
+## Tasks
+
+### High Priority
+
+- [ ] **Clear, actionable task description**
+  - Specific acceptance criteria 1
+  - Specific acceptance criteria 2
+
+### Medium Priority
+
+- [ ] **Another task description**
+  - Acceptance criteria
+
+### Low Priority
+
+- [ ] **Lower priority task**
+  - Acceptance criteria
 
 ## Guidelines (from Matt Pocock's Ralph Wiggum methodology)
 
@@ -76,7 +81,7 @@ Generate a JSON PRD with this structure:
 
 ## Output
 
-Return ONLY valid JSON. No markdown, no explanation, just the PRD JSON object.`
+Return ONLY the Markdown content. No code blocks, no explanations, just the PRD in Markdown format.`
 
 /**
  * Generate a PRD from a natural language description
@@ -113,28 +118,41 @@ export async function generatePrd(
     ],
   })
 
-  // Extract JSON from response
+  // Extract Markdown from response
   const textContent = response.content.find((block) => block.type === 'text')
   if (!textContent || textContent.type !== 'text') {
     throw new Error('No text response from Claude')
   }
 
-  const jsonText = textContent.text.trim()
+  let markdown = textContent.text.trim()
 
-  try {
-    const prd = JSON.parse(jsonText) as PrdJson
-    return normalizePrd(prd)
-  } catch {
-    // Try to extract JSON from markdown code block
-    const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/)
-    if (jsonMatch) {
-      const prd = JSON.parse(jsonMatch[1].trim()) as PrdJson
-      return normalizePrd(prd)
-    }
-    throw new Error(
-      `Failed to parse PRD JSON: ${jsonText.substring(0, 200)}...`
-    )
+  // Remove markdown code block wrapper if present
+  const mdMatch = markdown.match(/```(?:markdown|md)?\s*([\s\S]*?)```/)
+  if (mdMatch) {
+    markdown = mdMatch[1].trim()
   }
+
+  // Write to temp file and parse it
+  const tempPath = join(config.workingDir, '.prd.tmp.md')
+  writeFileSync(tempPath, markdown, 'utf-8')
+
+  // Import loadPrd to parse the markdown
+  const { loadPrd } = await import('./prd.ts')
+  const prd = loadPrd(tempPath)
+
+  // Clean up temp file
+  const { unlinkSync } = await import('fs')
+  try {
+    unlinkSync(tempPath)
+  } catch {
+    // Ignore cleanup errors
+  }
+
+  if (!prd) {
+    throw new Error('Failed to parse generated PRD Markdown')
+  }
+
+  return prd
 }
 
 /**
@@ -489,7 +507,7 @@ export async function generateProjectFiles(
     verbose?: boolean
   } = {}
 ): Promise<{ prd: PrdJson; agentsMd: string }> {
-  const prdPath = options.prdPath || 'prd.json'
+  const prdPath = options.prdPath || 'prd.md'
   const agentsPath = options.agentsPath || 'AGENTS.md'
 
   // Analyze codebase once for both

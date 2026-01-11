@@ -1,13 +1,13 @@
 /**
  * PRD (Product Requirements Document) parsing for Ralph
- * Supports both JSON and Markdown formats
+ * Markdown format only
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import type { PrdJson, PrdItem } from './types.ts'
 
 /**
- * Load and parse a PRD file
+ * Load and parse a PRD file (Markdown format only)
  */
 export function loadPrd(filePath: string): PrdJson | null {
   if (!existsSync(filePath)) {
@@ -15,40 +15,7 @@ export function loadPrd(filePath: string): PrdJson | null {
   }
 
   const content = readFileSync(filePath, 'utf-8')
-
-  if (filePath.endsWith('.json')) {
-    return parseJsonPrd(content)
-  } else if (filePath.endsWith('.md')) {
-    return parseMarkdownPrd(content)
-  }
-
-  // Try to detect format
-  try {
-    return parseJsonPrd(content)
-  } catch {
-    return parseMarkdownPrd(content)
-  }
-}
-
-/**
- * Parse JSON format PRD
- */
-function parseJsonPrd(content: string): PrdJson {
-  const data = JSON.parse(content)
-
-  // Handle both flat array and nested items format
-  if (Array.isArray(data)) {
-    return {
-      name: 'PRD',
-      items: data.map(normalizeItem),
-    }
-  }
-
-  return {
-    name: data.name || 'PRD',
-    description: data.description,
-    items: (data.items || []).map(normalizeItem),
-  }
+  return parseMarkdownPrd(content)
 }
 
 /**
@@ -92,14 +59,19 @@ function parseMarkdownPrd(content: string): PrdJson {
     }
 
     // Detect task items (checkbox format)
-    const taskMatch = line.match(/^-\s*\[([ xX])\]\s*\*?\*?(.+?)\*?\*?\s*$/)
+    // Support [ ], [x], [X], and [DONE]
+    const taskMatch = line.match(
+      /^-\s*\[([ xXDONE]+)\]\s*\*?\*?(.+?)\*?\*?\s*$/
+    )
     if (taskMatch) {
       // Save previous item
       if (currentItem) {
         items.push(normalizeItem(currentItem, itemIndex++))
       }
 
-      const isComplete = taskMatch[1].toLowerCase() === 'x'
+      const checkboxContent = taskMatch[1].trim()
+      const isComplete =
+        checkboxContent.toLowerCase() === 'x' || checkboxContent === 'DONE'
       const description = taskMatch[2].trim()
 
       currentItem = {
@@ -133,14 +105,10 @@ function parseMarkdownPrd(content: string): PrdJson {
 }
 
 /**
- * Save PRD back to file
+ * Save PRD back to file (Markdown format only)
  */
 export function savePrd(filePath: string, prd: PrdJson): void {
-  if (filePath.endsWith('.json')) {
-    writeFileSync(filePath, JSON.stringify(prd, null, 2), 'utf-8')
-  } else if (filePath.endsWith('.md')) {
-    writeFileSync(filePath, prdToMarkdown(prd), 'utf-8')
-  }
+  writeFileSync(filePath, prdToMarkdown(prd), 'utf-8')
 }
 
 /**
@@ -178,7 +146,7 @@ function prdToMarkdown(prd: PrdJson): string {
     lines.push('')
 
     for (const item of items) {
-      const checkbox = item.passes ? '[x]' : '[ ]'
+      const checkbox = item.passes ? '[DONE]' : '[ ]'
       lines.push(`- ${checkbox} **${item.description}**`)
 
       for (const step of item.steps) {
@@ -193,7 +161,7 @@ function prdToMarkdown(prd: PrdJson): string {
 }
 
 /**
- * Mark a PRD item as complete
+ * Mark a PRD item as complete by ID
  */
 export function markItemComplete(prd: PrdJson, itemId: string): PrdJson {
   return {
@@ -202,6 +170,35 @@ export function markItemComplete(prd: PrdJson, itemId: string): PrdJson {
       item.id === itemId ? { ...item, passes: true } : item
     ),
   }
+}
+
+/**
+ * Mark a PRD item as complete by description (fuzzy match)
+ */
+export function markItemCompleteByDescription(
+  prd: PrdJson,
+  description: string
+): PrdJson | null {
+  // Try exact match first
+  let matchedItem = prd.items.find(
+    (item) => !item.passes && item.description === description
+  )
+
+  // If no exact match, try fuzzy match (contains or is contained by)
+  if (!matchedItem) {
+    matchedItem = prd.items.find(
+      (item) =>
+        !item.passes &&
+        (item.description.toLowerCase().includes(description.toLowerCase()) ||
+          description.toLowerCase().includes(item.description.toLowerCase()))
+    )
+  }
+
+  if (!matchedItem) {
+    return null
+  }
+
+  return markItemComplete(prd, matchedItem.id)
 }
 
 /**

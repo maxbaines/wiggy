@@ -91,8 +91,7 @@ Run Options:
 
 Init Options:
   --analyze           Analyze existing codebase for context
-  --output FILE       Output file (default: prd.json)
-  --markdown          Output as Markdown instead of JSON
+  --output FILE       Output file (default: prd.md)
 
 Examples:
   wiggy 5             Run 5 iterations
@@ -119,8 +118,6 @@ Configuration:
 
 PRD Files:
   Ralph looks for PRD files in this order:
-  - plans/prd.json
-  - prd.json
   - plans/prd.md
   - prd.md
 
@@ -141,7 +138,7 @@ function printVersion(): void {
 async function handleInit(args: string[]): Promise<void> {
   let description = ''
   let analyze = false
-  let output = 'prd.json'
+  let output = 'prd.md'
   let configFile: string | undefined
 
   for (let i = 0; i < args.length; i++) {
@@ -152,11 +149,6 @@ async function handleInit(args: string[]): Promise<void> {
         break
       case '--output':
         output = args[++i]
-        break
-      case '--markdown':
-        if (!output.endsWith('.md')) {
-          output = 'prd.md'
-        }
         break
       case '-c':
       case '--config':

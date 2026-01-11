@@ -138,7 +138,7 @@ export function validateConfig(config: RalphConfig): string[] {
  * Find PRD file in common locations
  */
 export function findPrdFile(workingDir: string): string | null {
-  const locations = ['plans/prd.json', 'prd.json', 'plans/prd.md', 'prd.md']
+  const locations = ['plans/prd.md', 'prd.md']
 
   for (const loc of locations) {
     const fullPath = join(workingDir, loc)

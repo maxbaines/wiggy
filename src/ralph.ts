@@ -7,7 +7,13 @@ import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import type { RalphConfig, RalphArgs, LoopState } from './types.ts'
 import { loadConfig, validateConfig, findPrdFile } from './config.ts'
-import { loadPrd, getPrdSummary, isPrdComplete } from './prd.ts'
+import {
+  loadPrd,
+  getPrdSummary,
+  isPrdComplete,
+  markItemCompleteByDescription,
+  savePrd,
+} from './prd.ts'
 import {
   initProgressFile,
   getProgressSummary,
@@ -175,6 +181,20 @@ export async function runRalph(args: RalphArgs): Promise<void> {
         }
       )
       appendProgress(progressPath, entry)
+
+      // Mark task as complete in PRD if we have one
+      if (prd && prdPath && result.taskDescription) {
+        const updatedPrd = markItemCompleteByDescription(
+          prd,
+          result.taskDescription
+        )
+        if (updatedPrd) {
+          savePrd(prdPath, updatedPrd)
+          // Update our in-memory copy
+          state.prd = updatedPrd
+          log(`  → Marked task as [DONE] in PRD`, 'green')
+        }
+      }
 
       // Check for completion
       if (result.isComplete) {

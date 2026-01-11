@@ -65,7 +65,10 @@ ${agentsMd ? `### Project Guidelines (AGENTS.md)\n${agentsMd}` : ''}
 When you have completed a task:
 1. Run all feedback loops (types, tests, lint)
 2. Make a git commit with a descriptive message
-3. Report what you did
+3. Report what you did using this EXACT format:
+   "Completed: [exact task description from PRD]"
+   
+   This allows Ralph to automatically mark the task as [DONE] in the PRD file.
 
 If ALL tasks in the PRD are complete, output exactly: ${COMPLETION_MARKER}
 
