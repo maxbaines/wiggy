@@ -6,6 +6,52 @@
 
 Named after Ralph Wiggum - because like Ralph, it just keeps going until the job is done.
 
+## How Loop Works
+
+Loop operates as an **autonomous coding agent** that iteratively works through tasks defined in a PRD (Product Requirements Document).
+
+### The Loop Cycle
+
+Each iteration follows this pattern:
+
+1. **Read PRD** - Loop reads your `prd.md` or `prd.json` file to understand what needs to be built
+2. **Check Progress** - Reviews `progress.txt` to see what's already been completed
+3. **Pick a Task** - Selects the next uncompleted task from the PRD
+4. **Execute** - Uses available tools (file operations, terminal commands, git) to implement the task
+5. **Run Checks** - Executes back pressure checks from `AGENTS.md` (typecheck, lint, test, build)
+6. **Commit** - If checks pass, commits the changes with a descriptive message
+7. **Update Progress** - Marks the task as complete and logs what was done
+8. **Repeat** - Moves to the next task until all iterations are complete or PRD is finished
+
+### Example Workflow
+
+```bash
+# Step 1: Generate a PRD from your idea
+loop init "Build a CLI todo app with add, list, complete commands"
+# Creates: prd.md with structured tasks, AGENTS.md with project checks
+
+# Step 2: Run Loop to implement the PRD
+loop 5 --hitl
+# Loop will:
+#   - Read prd.md and find the first uncompleted task
+#   - Implement it (create files, write code, run commands)
+#   - Run typecheck/lint/test to verify the code works
+#   - Commit the changes
+#   - Move to the next task
+#   - Pause for your review (--hitl = human-in-the-loop)
+#   - Repeat for up to 5 iterations
+```
+
+### Key Concepts
+
+| Concept           | Description                                                             |
+| ----------------- | ----------------------------------------------------------------------- |
+| **Iteration**     | One complete cycle of: pick task → implement → check → commit           |
+| **PRD**           | The task list that defines what Loop should build                       |
+| **Progress**      | Tracks completed tasks so Loop can resume where it left off             |
+| **Back Pressure** | Quality checks (typecheck, lint, test) that must pass before committing |
+| **HITL Mode**     | Human-in-the-loop - pauses between iterations for manual review         |
+
 ## Quick Start
 
 ```bash
