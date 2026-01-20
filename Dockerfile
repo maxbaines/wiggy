@@ -40,12 +40,16 @@ WORKDIR /workspace
 # Copy loop application
 COPY package.json bun.lockb /app/
 WORKDIR /app
-RUN bun install --frozen-lockfile --production
+RUN bun install --frozen-lockfile
 COPY src /app/src
 COPY tsconfig.json /app/
 
-# Add loop to PATH
-RUN echo 'alias loop="bun run /app/src/index.ts"' >> /root/.bashrc
+# Build the compiled binary
+RUN bun run build:linux
+
+# Add loop binary to PATH
+RUN cp /app/dist/loop-linux-x64/loop /usr/local/bin/loop \
+    && chmod +x /usr/local/bin/loop
 
 # Set workspace as default directory
 WORKDIR /workspace
