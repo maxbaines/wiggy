@@ -20,6 +20,9 @@ RUN apt-get update && apt-get install -y \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
+# Configure git credential caching (1 hour timeout)
+RUN git config --global credential.helper 'cache --timeout=3600'
+
 # Install Bun
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
