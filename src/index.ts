@@ -160,6 +160,34 @@ function printVersion(): void {
 }
 
 /**
+ * Get the actual binary path (handles compiled Bun binaries)
+ * For compiled binaries, process.argv[1] returns a virtual /$bunfs/ path
+ * We need to use process.execPath instead
+ */
+function getBinaryPath(): string {
+  // For compiled Bun binaries, process.execPath is the actual binary
+  // For dev mode (bun run), process.argv[1] is the script path
+  const execPath = process.execPath
+
+  // If execPath doesn't contain 'bun' in the path, it's likely the compiled binary
+  if (!execPath.includes('bun') && existsSync(execPath)) {
+    return execPath
+  }
+
+  // Fallback: try to find loop binary in common locations
+  const possiblePaths = [join(process.cwd(), 'loop'), '/usr/local/bin/loop']
+
+  for (const p of possiblePaths) {
+    if (existsSync(p)) {
+      return p
+    }
+  }
+
+  // Last resort: return execPath even if it might be bun
+  return execPath
+}
+
+/**
  * Handle global command - install loop globally
  */
 async function handleGlobal(): Promise<void> {
@@ -180,10 +208,11 @@ async function handleGlobal(): Promise<void> {
   const sharePath = '/usr/local/share/loop/docker'
   const sandboxDest = join(sharePath, 'sandbox.sh')
 
-  // Find the current loop binary
-  const currentBinary = process.argv[1]
+  // Find the current loop binary (use execPath for compiled binaries)
+  const currentBinary = getBinaryPath()
   if (!currentBinary || !existsSync(currentBinary)) {
     console.error('❌ Could not find current loop binary')
+    console.error(`   Tried: ${currentBinary}`)
     process.exit(1)
   }
 
@@ -279,8 +308,8 @@ async function handleNew(args: string[]): Promise<void> {
   mkdirSync(projDir, { recursive: true })
   mkdirSync(join(projDir, 'docker'), { recursive: true })
 
-  // Find and copy loop binary
-  const currentBinary = process.argv[1]
+  // Find and copy loop binary (use getBinaryPath for compiled binaries)
+  const currentBinary = getBinaryPath()
   const possibleBinaries = [
     currentBinary,
     join(process.cwd(), 'loop'),
