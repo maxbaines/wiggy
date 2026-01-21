@@ -28,6 +28,9 @@ example/
 *.test.ts
 *.spec.ts
 
+# Project folders (prevent recursive copying)
+proj/
+
 # Documentation
 *.md
 !README.md
