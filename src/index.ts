@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Little Wiggy - CLI Entry Point
+ * Loop - CLI Entry Point
  * Autonomous AI coding loop using Claude Agent SDK
  */
 
@@ -156,7 +156,7 @@ For more information, visit: https://github.com/maxbaines/loop
  * Print version
  */
 function printVersion(): void {
-  console.log(`Little Wiggy v${VERSION}`)
+  console.log(`Loop v${VERSION}`)
 }
 
 /**
@@ -164,7 +164,7 @@ function printVersion(): void {
  */
 async function handleGlobal(): Promise<void> {
   console.log('╔════════════════════════════════════════════════════════════╗')
-  console.log('║                    🤖 Little Wiggy                         ║')
+  console.log('║                    🤖 Loop                         ║')
   console.log('║                   Global Installation                      ║')
   console.log('╚════════════════════════════════════════════════════════════╝')
   console.log('')
@@ -259,7 +259,7 @@ async function handleNew(args: string[]): Promise<void> {
   }
 
   console.log('╔════════════════════════════════════════════════════════════╗')
-  console.log('║                    🤖 Little Wiggy                         ║')
+  console.log('║                    🤖 Loop                         ║')
   console.log('║                   New Project Setup                        ║')
   console.log('╚════════════════════════════════════════════════════════════╝')
   console.log('')
@@ -565,12 +565,12 @@ async function handleInit(args: string[]): Promise<void> {
 
   if (!description) {
     console.error('Error: Please provide a project description')
-    console.error('Usage: wiggy init "Your project description"')
+    console.error('Usage: loop init "Your project description"')
     process.exit(1)
   }
 
   console.log('╔════════════════════════════════════════════════════════════╗')
-  console.log('║                    🤖 Little Wiggy                         ║')
+  console.log('║                    🤖 Loop                         ║')
   console.log('║              PRD & AGENTS.md Generator                     ║')
   console.log('╚════════════════════════════════════════════════════════════╝')
   console.log('')
@@ -605,7 +605,7 @@ async function handleInit(args: string[]): Promise<void> {
     console.log(`   - Low: ${low}`)
     console.log('')
     console.log(
-      `🚀 Run 'wiggy ${prd.items.length}' to start working through the PRD`,
+      `🚀 Run 'loop ${prd.items.length}' to start working through the PRD`,
     )
   } catch (error) {
     console.error(
@@ -649,12 +649,12 @@ async function handleDo(args: string[]): Promise<void> {
 
   if (!description) {
     console.error('Error: Please provide a task description')
-    console.error('Usage: wiggy do "Your task description"')
+    console.error('Usage: loop do "Your task description"')
     process.exit(1)
   }
 
   console.log('╔════════════════════════════════════════════════════════════╗')
-  console.log('║                    🤖 Little Wiggy                         ║')
+  console.log('║                    🤖 Loop                         ║')
   console.log('║                   One-Off Task: DO                         ║')
   console.log('╚════════════════════════════════════════════════════════════╝')
   console.log('')

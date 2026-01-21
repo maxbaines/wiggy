@@ -1,5 +1,5 @@
 /**
- * PRD Generator for Little Wiggy
+ * PRD Generator for Loop
  * Uses Claude to generate structured PRD files from natural language descriptions
  */
 
@@ -92,7 +92,7 @@ export async function generatePrd(
   options: {
     analyzeCodebase?: boolean
     existingFiles?: string[]
-  } = {}
+  } = {},
 ): Promise<PrdJson> {
   const client = new Anthropic({
     apiKey: config.apiKey,
@@ -244,7 +244,7 @@ export function readProjectDocs(workingDir: string): string | null {
 export async function refinePrd(
   prd: PrdJson,
   feedback: string,
-  config: RalphConfig
+  config: RalphConfig,
 ): Promise<PrdJson> {
   const client = new Anthropic({
     apiKey: config.apiKey,
@@ -261,7 +261,7 @@ export async function refinePrd(
         content: `Here is an existing PRD:\n\n${JSON.stringify(
           prd,
           null,
-          2
+          2,
         )}\n\nPlease refine it based on this feedback:\n${feedback}\n\nReturn the updated PRD as JSON.`,
       },
     ],
@@ -295,7 +295,7 @@ export async function generateAndSavePrd(
   options: {
     analyzeCodebase?: boolean
     verbose?: boolean
-  } = {}
+  } = {},
 ): Promise<PrdJson> {
   if (options.verbose) {
     console.log('🔍 Analyzing project...')
@@ -387,7 +387,7 @@ function detectProjectType(files: string[]): string {
 
   if (
     files.some(
-      (f) => f.endsWith('Package.swift') || f.includes('Package.swift')
+      (f) => f.endsWith('Package.swift') || f.includes('Package.swift'),
     )
   ) {
     return 'Swift (Package.swift detected)'
@@ -399,7 +399,7 @@ function detectProjectType(files: string[]): string {
     files.some((f) => f.endsWith('package.json') || f.includes('package.json'))
   ) {
     const hasTsConfig = files.some(
-      (f) => f.endsWith('tsconfig.json') || f.includes('tsconfig.json')
+      (f) => f.endsWith('tsconfig.json') || f.includes('tsconfig.json'),
     )
     return hasTsConfig
       ? 'TypeScript/Node.js (package.json + tsconfig.json detected)'
@@ -414,7 +414,7 @@ function detectProjectType(files: string[]): string {
         f.endsWith('pyproject.toml') ||
         f.includes('pyproject.toml') ||
         f.endsWith('requirements.txt') ||
-        f.includes('requirements.txt')
+        f.includes('requirements.txt'),
     )
   ) {
     return 'Python (pyproject.toml or requirements.txt detected)'
@@ -425,7 +425,7 @@ function detectProjectType(files: string[]): string {
         f.endsWith('CMakeLists.txt') ||
         f.includes('CMakeLists.txt') ||
         f.endsWith('Makefile') ||
-        f.includes('Makefile')
+        f.includes('Makefile'),
     )
   ) {
     return 'C/C++ (CMakeLists.txt or Makefile detected)'
@@ -454,7 +454,7 @@ export async function generateAgentsMd(
   options: {
     existingFiles?: string[]
     projectDocs?: string
-  } = {}
+  } = {},
 ): Promise<string> {
   const client = new Anthropic({
     apiKey: config.apiKey,
@@ -498,7 +498,7 @@ IMPORTANT: Your output MUST include ALL required sections (Project overview, Set
           f.endsWith('.ts') ||
           f.endsWith('.rs') ||
           f.endsWith('.go') ||
-          f.endsWith('.py')
+          f.endsWith('.py'),
       )
       .slice(0, 20) // Limit to 20 key files
 
@@ -558,7 +558,7 @@ export async function generateAndSaveAgentsMd(
   options: {
     analyzeCodebase?: boolean
     verbose?: boolean
-  } = {}
+  } = {},
 ): Promise<string> {
   if (options.verbose) {
     console.log('🔍 Analyzing project for AGENTS.md...')
@@ -603,7 +603,7 @@ export async function generateProjectFiles(
     agentsPath?: string
     analyzeCodebase?: boolean
     verbose?: boolean
-  } = {}
+  } = {},
 ): Promise<{ prd: PrdJson; agentsMd: string }> {
   const prdPath = options.prdPath || 'prd.md'
   const agentsPath = options.agentsPath || 'AGENTS.md'
