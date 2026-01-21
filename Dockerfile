@@ -56,7 +56,10 @@ RUN cp /app/dist/loop-linux-x64/loop /usr/local/bin/loop \
 # Copy helper scripts
 COPY docker/terminal.sh /usr/local/bin/terminal.sh
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/terminal.sh /usr/local/bin/entrypoint.sh
+COPY docker/sandbox.sh /usr/local/bin/sandbox.sh
+RUN mkdir -p /usr/local/share/loop/docker
+COPY docker/sandbox.sh /usr/local/share/loop/docker/sandbox.sh
+RUN chmod +x /usr/local/bin/terminal.sh /usr/local/bin/entrypoint.sh /usr/local/bin/sandbox.sh /usr/local/share/loop/docker/sandbox.sh
 
 # Set workspace as default directory
 WORKDIR /workspace
