@@ -466,16 +466,164 @@ dist/
 }
 
 /**
+ * Create project folder for sandbox (reuses logic from handleNew)
+ */
+function createProjectFolder(name: string): string {
+  const projDir = join(process.cwd(), 'proj', name)
+
+  // If project already exists, just return the path
+  if (existsSync(projDir)) {
+    return projDir
+  }
+
+  console.log(`📁 Creating project folder: proj/${name}`)
+  console.log('')
+
+  // Create project directory structure
+  mkdirSync(projDir, { recursive: true })
+  mkdirSync(join(projDir, 'docker'), { recursive: true })
+
+  // Find and copy loop binary
+  const currentBinary = getBinaryPath()
+  const possibleBinaries = [
+    currentBinary,
+    join(process.cwd(), 'loop'),
+    '/usr/local/bin/loop',
+  ]
+
+  let binarySrc: string | null = null
+  for (const p of possibleBinaries) {
+    if (p && existsSync(p)) {
+      binarySrc = p
+      break
+    }
+  }
+
+  if (binarySrc) {
+    copyFileSync(binarySrc, join(projDir, 'loop'))
+    spawnSync('chmod', ['+x', join(projDir, 'loop')])
+    console.log('   ✓ Copied loop binary')
+  }
+
+  // Find and copy sandbox.sh
+  const possibleSandboxPaths = [
+    join(process.cwd(), 'docker', 'sandbox.sh'),
+    join(dirname(currentBinary || ''), 'docker', 'sandbox.sh'),
+    join(dirname(currentBinary || ''), '..', 'docker', 'sandbox.sh'),
+    '/usr/local/share/loop/docker/sandbox.sh',
+  ]
+
+  for (const p of possibleSandboxPaths) {
+    if (existsSync(p)) {
+      copyFileSync(p, join(projDir, 'docker', 'sandbox.sh'))
+      spawnSync('chmod', ['+x', join(projDir, 'docker', 'sandbox.sh')])
+      console.log('   ✓ Copied docker/sandbox.sh')
+      break
+    }
+  }
+
+  // Copy or create .env
+  const possibleEnvPaths = [
+    join(process.cwd(), '.env'),
+    join(dirname(currentBinary || ''), '.env'),
+  ]
+
+  let envSrc: string | null = null
+  for (const p of possibleEnvPaths) {
+    if (existsSync(p)) {
+      envSrc = p
+      break
+    }
+  }
+
+  if (envSrc) {
+    copyFileSync(envSrc, join(projDir, '.env'))
+    console.log('   ✓ Copied .env')
+  } else {
+    const defaultEnv = `# Loop Configuration
+ANTHROPIC_API_KEY=your-api-key-here
+RALPH_MODEL=claude-sonnet-4-20250514
+RALPH_MAX_TOKENS=8192
+RALPH_VERBOSE=false
+`
+    writeFileSync(join(projDir, '.env'), defaultEnv)
+    console.log('   ✓ Created .env (please add your API key)')
+  }
+
+  // Create .gitignore
+  const gitignore = `.env
+progress.txt
+node_modules/
+dist/
+*.log
+.DS_Store
+`
+  writeFileSync(join(projDir, '.gitignore'), gitignore)
+  console.log('   ✓ Created .gitignore')
+
+  // Copy Dockerfile and docker scripts
+  const possibleDockerfilePaths = [
+    join(process.cwd(), 'Dockerfile'),
+    join(dirname(currentBinary || ''), 'Dockerfile'),
+    join(dirname(currentBinary || ''), '..', 'Dockerfile'),
+    '/usr/local/share/loop/Dockerfile',
+  ]
+
+  let dockerfileSrc: string | null = null
+  for (const p of possibleDockerfilePaths) {
+    if (existsSync(p)) {
+      dockerfileSrc = p
+      break
+    }
+  }
+
+  if (dockerfileSrc) {
+    copyFileSync(dockerfileSrc, join(projDir, 'Dockerfile'))
+    console.log('   ✓ Copied Dockerfile')
+
+    const dockerDir = dirname(dockerfileSrc)
+    const entrypointPaths = [
+      join(dockerDir, 'docker', 'entrypoint.sh'),
+      join(dockerDir, 'entrypoint.sh'),
+      join(process.cwd(), 'docker', 'entrypoint.sh'),
+    ]
+    const terminalPaths = [
+      join(dockerDir, 'docker', 'terminal.sh'),
+      join(dockerDir, 'terminal.sh'),
+      join(process.cwd(), 'docker', 'terminal.sh'),
+    ]
+
+    for (const p of entrypointPaths) {
+      if (existsSync(p)) {
+        copyFileSync(p, join(projDir, 'docker', 'entrypoint.sh'))
+        spawnSync('chmod', ['+x', join(projDir, 'docker', 'entrypoint.sh')])
+        console.log('   ✓ Copied docker/entrypoint.sh')
+        break
+      }
+    }
+
+    for (const p of terminalPaths) {
+      if (existsSync(p)) {
+        copyFileSync(p, join(projDir, 'docker', 'terminal.sh'))
+        spawnSync('chmod', ['+x', join(projDir, 'docker', 'terminal.sh')])
+        console.log('   ✓ Copied docker/terminal.sh')
+        break
+      }
+    }
+  }
+
+  console.log('')
+  return projDir
+}
+
+/**
  * Handle sandbox command - launch fresh Docker sandbox
  */
 async function handleSandbox(args: string[]): Promise<void> {
   const name = args[0]
 
-  if (!name || name.startsWith('-')) {
-    console.error('Error: Please provide a sandbox name')
-    console.error('Usage: loop sandbox <name>')
-    process.exit(1)
-  }
+  // If no name provided, use current directory (original behavior)
+  const useCurrentDir = !name || name.startsWith('-')
 
   console.log('╔════════════════════════════════════════════════════════════╗')
   console.log('║                    🐳 Loop Sandbox                         ║')
@@ -483,7 +631,21 @@ async function handleSandbox(args: string[]): Promise<void> {
   console.log('╚════════════════════════════════════════════════════════════╝')
   console.log('')
 
-  const containerName = `loop-${name}`
+  // Determine workspace directory
+  let workspaceDir: string
+  let containerName: string
+
+  if (useCurrentDir) {
+    // No name provided - use current directory (original behavior)
+    workspaceDir = process.cwd()
+    containerName = 'loop-default'
+    console.log('📁 Using current directory as workspace')
+  } else {
+    // Name provided - create/use proj/<name>/ folder
+    workspaceDir = createProjectFolder(name)
+    containerName = `loop-${name}`
+  }
+
   const imageName = 'loop'
 
   // Check if Docker is running
@@ -496,7 +658,7 @@ async function handleSandbox(args: string[]): Promise<void> {
 
   // Stop and remove existing container if it exists
   console.log(`📦 Container: ${containerName}`)
-  console.log(`📁 Workspace: ${process.cwd()}`)
+  console.log(`📁 Workspace: ${workspaceDir}`)
   console.log('')
 
   const existingContainer = spawnSync(
@@ -565,7 +727,7 @@ async function handleSandbox(args: string[]): Promise<void> {
     '--name',
     containerName,
     '-v',
-    `${process.cwd()}:/workspace`,
+    `${workspaceDir}:/workspace`,
   ]
 
   // Pass through environment variables
@@ -586,7 +748,8 @@ async function handleSandbox(args: string[]): Promise<void> {
   }
 
   // Calculate port based on container name hash
-  const hash = name.split('').reduce((a, b) => {
+  const hashName = useCurrentDir ? 'default' : name
+  const hash = hashName.split('').reduce((a, b) => {
     a = (a << 5) - a + b.charCodeAt(0)
     return a & a
   }, 0)

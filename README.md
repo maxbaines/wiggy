@@ -64,7 +64,13 @@ loop do "Fix current build errors and package as an app"
 
 ```bash
 # Download the binary for your platform from releases, or build from source
-# Then run with a task:
+
+# Install globally (optional but recommended)
+./loop global
+
+# Create a new project
+loop new myproject
+cd proj/myproject
 
 # One-off task - generate PRD and run immediately
 loop do "Fix build errors and package as an app"
@@ -75,7 +81,119 @@ loop init "Build a CLI todo app with add, list, complete commands"
 
 # Run iterations to implement the PRD
 loop 5 --hitl
+
+# Run in a Docker sandbox for isolation
+loop sandbox myproject
 ```
+
+## Installation
+
+### Global Installation
+
+Install Loop globally so you can run it from anywhere:
+
+```bash
+# From the directory containing the loop binary
+./loop global
+```
+
+This copies:
+
+- Binary to `/usr/local/bin/loop`
+- Docker scripts to `/usr/local/share/loop/docker/`
+
+After installation, you can run `loop` from any directory.
+
+### Project Setup
+
+Create a new self-contained project with all needed files:
+
+```bash
+loop new myproject
+```
+
+This creates `proj/myproject/` with:
+
+- `loop` - The loop binary
+- `.env` - Configuration (copy your API key)
+- `.gitignore` - Standard ignores
+- `Dockerfile` - For sandbox support
+- `docker/` - Docker helper scripts
+
+## Docker Sandbox
+
+Run Loop in an isolated Docker container for safety:
+
+```bash
+# With a name - creates isolated project folder
+loop sandbox myproject
+
+# Without a name - uses current directory
+loop sandbox
+```
+
+### Sandbox Modes
+
+**Named sandbox** (`loop sandbox myproject`):
+
+- Creates `proj/myproject/` folder with all needed files
+- Mounts that folder as `/workspace` in the container
+- Each named sandbox is completely isolated from others
+
+**Default sandbox** (`loop sandbox`):
+
+- Uses current directory as workspace
+- Good for quick testing in existing projects
+
+### What the Sandbox Provides
+
+**🔒 Protected (host is safe from):**
+
+- **System files** - Cannot modify `/etc`, `/usr`, `/bin`, etc. on host
+- **Other directories** - Can only access `/workspace` (your mounted project folder)
+- **Network isolation** - Runs in its own network namespace
+- **Process isolation** - Container processes are isolated from host
+- **Package installation** - `apt install`, etc. only affects the container
+- **Dangerous commands** - `rm -rf /` only destroys the container, not your host
+
+**⚠️ Shared (can affect host):**
+
+- **Mounted workspace** - Files in the project folder are mounted to `/workspace`
+- **Exposed ports** - The web terminal port (7681+offset)
+
+### Sandbox Workflow
+
+```bash
+# Launch a named sandbox (creates proj/hello-world/ automatically)
+loop sandbox hello-world
+
+# Inside the sandbox:
+root@container:/workspace# loop init "Build a hello world app"
+root@container:/workspace# loop 5
+
+# Exit sandbox (container keeps running)
+root@container:/workspace# exit
+
+# Stop the container when done
+docker stop loop-hello-world
+
+# Launch another isolated sandbox
+loop sandbox another-project
+# This creates proj/another-project/ - completely separate from hello-world
+```
+
+### Why Use the Sandbox?
+
+The sandbox is ideal for running an autonomous AI coding agent because:
+
+- ✅ The agent can read/write/delete files in your project
+- ✅ The agent can install packages inside the container
+- ✅ The agent can run any commands inside the container
+- ❌ The agent cannot access files outside the mounted folder
+- ❌ The agent cannot install packages on your host OS
+- ❌ The agent cannot crash or damage your host system
+
+The worst the agent can do is mess up your project files, which you can recover with git.
 
 ## Usage
 
