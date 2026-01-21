@@ -617,6 +617,73 @@ dist/
 }
 
 /**
+ * Handle sandbox list command - show all sandbox containers
+ */
+async function handleSandboxList(): Promise<void> {
+  console.log('╔════════════════════════════════════════════════════════════╗')
+  console.log('║                    🐳 Loop Sandboxes                       ║')
+  console.log('╚════════════════════════════════════════════════════════════╝')
+  console.log('')
+
+  // Get all containers with loop- prefix
+  const result = spawnSync(
+    'docker',
+    [
+      'ps',
+      '-a',
+      '--filter',
+      'name=loop-',
+      '--format',
+      '{{.Names}}\t{{.Status}}\t{{.Ports}}',
+    ],
+    { stdio: 'pipe' },
+  )
+
+  if (result.status !== 0) {
+    console.error('❌ Failed to list containers')
+    process.exit(1)
+  }
+
+  const output = result.stdout?.toString().trim()
+  if (!output) {
+    console.log('   No sandboxes found.')
+    console.log('')
+    console.log('   Create one with: loop sandbox <name>')
+    return
+  }
+
+  const lines = output.split('\n')
+  console.log('   NAME                STATUS              WEB TERMINAL')
+  console.log('   ─────────────────────────────────────────────────────────')
+
+  for (const line of lines) {
+    const [name, status, ports] = line.split('\t')
+    const isRunning = status?.toLowerCase().includes('up')
+    const statusIcon = isRunning ? '🟢' : '⚫'
+
+    // Extract port from ports string (e.g., "0.0.0.0:7962->7681/tcp")
+    let webUrl = '-'
+    if (ports) {
+      const portMatch = ports.match(/:(\d+)->7681/)
+      if (portMatch) {
+        webUrl = `http://localhost:${portMatch[1]}`
+      }
+    }
+
+    console.log(
+      `   ${statusIcon} ${name.padEnd(18)} ${(isRunning ? 'running' : 'stopped').padEnd(18)} ${webUrl}`,
+    )
+  }
+
+  console.log('')
+  console.log('   Commands:')
+  console.log('   - Attach: docker exec -it <name> bash')
+  console.log('   - Stop:   docker stop <name>')
+  console.log('   - Remove: docker rm <name>')
+  console.log('')
+}
+
+/**
  * Handle sandbox command - launch fresh Docker sandbox
  */
 async function handleSandbox(args: string[]): Promise<void> {
@@ -721,6 +788,9 @@ async function handleSandbox(args: string[]): Promise<void> {
   // Create new container
   console.log('⏳ Creating new container...')
 
+  // Get the proj directory for mounting all projects
+  const projDir = join(process.cwd(), 'proj')
+
   const dockerRunArgs = [
     'run',
     '-d',
@@ -729,6 +799,11 @@ async function handleSandbox(args: string[]): Promise<void> {
     '-v',
     `${workspaceDir}:/workspace`,
   ]
+
+  // Mount all projects as /projects if proj/ exists
+  if (existsSync(projDir)) {
+    dockerRunArgs.push('-v', `${projDir}:/projects`)
+  }
 
   // Pass through environment variables
   if (process.env.ANTHROPIC_API_KEY) {
@@ -978,6 +1053,11 @@ async function main(): Promise<void> {
 
   // Check for sandbox command
   if (rawArgs[0] === 'sandbox') {
+    // Check for subcommands
+    if (rawArgs[1] === 'list') {
+      await handleSandboxList()
+      return
+    }
     await handleSandbox(rawArgs.slice(1))
     return
   }
