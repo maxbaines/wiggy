@@ -96,6 +96,9 @@ Commands:
   do <description>    Generate a PRD and run it to completion (one-off task)
   new <name>          Create a new project folder in proj/
   sandbox <name>      Launch a fresh Docker sandbox (rebuilds image)
+  sandbox list        List all sandbox containers
+  sandbox stop <name> Stop a specific sandbox container
+  sandbox stop all    Stop all running sandbox containers
   global              Install loop globally to /usr/local/bin
 
 Run Options:
@@ -617,6 +620,121 @@ dist/
 }
 
 /**
+ * Handle sandbox stop command - stop a specific sandbox container
+ */
+async function handleSandboxStop(name: string): Promise<void> {
+  console.log('╔════════════════════════════════════════════════════════════╗')
+  console.log('║                    🐳 Loop Sandbox                         ║')
+  console.log('║                      Stop Container                        ║')
+  console.log('╚════════════════════════════════════════════════════════════╝')
+  console.log('')
+
+  const containerName = name.startsWith('loop-') ? name : `loop-${name}`
+
+  // Check if container exists
+  const existsResult = spawnSync(
+    'docker',
+    [
+      'ps',
+      '-a',
+      '--filter',
+      `name=^${containerName}$`,
+      '--format',
+      '{{.Names}}',
+    ],
+    { stdio: 'pipe' },
+  )
+
+  const exists = existsResult.stdout?.toString().trim()
+  if (!exists) {
+    console.log(`❌ Container '${containerName}' not found`)
+    console.log('')
+    console.log('   Run "loop sandbox list" to see available sandboxes.')
+    process.exit(1)
+  }
+
+  // Check if container is running
+  const runningResult = spawnSync(
+    'docker',
+    ['ps', '--filter', `name=^${containerName}$`, '--format', '{{.Names}}'],
+    { stdio: 'pipe' },
+  )
+
+  const isRunning = runningResult.stdout?.toString().trim()
+  if (!isRunning) {
+    console.log(`⚫ Container '${containerName}' is already stopped`)
+    return
+  }
+
+  // Stop the container
+  console.log(`⏳ Stopping ${containerName}...`)
+  const stopResult = spawnSync('docker', ['stop', containerName], {
+    stdio: 'pipe',
+  })
+
+  if (stopResult.status !== 0) {
+    console.error(
+      `❌ Failed to stop container: ${stopResult.stderr?.toString()}`,
+    )
+    process.exit(1)
+  }
+
+  console.log(`✅ Stopped ${containerName}`)
+}
+
+/**
+ * Handle sandbox stop all command - stop all sandbox containers
+ */
+async function handleSandboxStopAll(): Promise<void> {
+  console.log('╔════════════════════════════════════════════════════════════╗')
+  console.log('║                    🐳 Loop Sandbox                         ║')
+  console.log('║                   Stop All Containers                      ║')
+  console.log('╚════════════════════════════════════════════════════════════╝')
+  console.log('')
+
+  // Get all running containers with loop- prefix
+  const result = spawnSync(
+    'docker',
+    ['ps', '--filter', 'name=loop-', '--format', '{{.Names}}'],
+    { stdio: 'pipe' },
+  )
+
+  if (result.status !== 0) {
+    console.error('❌ Failed to list containers')
+    process.exit(1)
+  }
+
+  const output = result.stdout?.toString().trim()
+  if (!output) {
+    console.log('   No running sandboxes found.')
+    return
+  }
+
+  const containers = output.split('\n').filter(Boolean)
+  console.log(`⏳ Stopping ${containers.length} sandbox(es)...`)
+  console.log('')
+
+  let stopped = 0
+  let failed = 0
+
+  for (const container of containers) {
+    const stopResult = spawnSync('docker', ['stop', container], {
+      stdio: 'pipe',
+    })
+    if (stopResult.status === 0) {
+      console.log(`   ✅ Stopped ${container}`)
+      stopped++
+    } else {
+      console.log(`   ❌ Failed to stop ${container}`)
+      failed++
+    }
+  }
+
+  console.log('')
+  console.log(`   Summary: ${stopped} stopped, ${failed} failed`)
+}
+
+/**
  * Handle sandbox list command - show all sandbox containers
  */
 async function handleSandboxList(): Promise<void> {
@@ -1062,6 +1180,20 @@ async function main(): Promise<void> {
     // Check for subcommands
     if (rawArgs[1] === 'list') {
       await handleSandboxList()
+      return
+    }
+    if (rawArgs[1] === 'stop') {
+      if (rawArgs[2] === 'all') {
+        await handleSandboxStopAll()
+        return
+      }
+      if (!rawArgs[2] || rawArgs[2].startsWith('-')) {
+        console.error('Error: Please provide a sandbox name')
+        console.error('Usage: loop sandbox stop <name>')
+        console.error('       loop sandbox stop all')
+        process.exit(1)
+      }
+      await handleSandboxStop(rawArgs[2])
       return
     }
     await handleSandbox(rawArgs.slice(1))
