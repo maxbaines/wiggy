@@ -14,7 +14,9 @@ import {
   copyFileSync,
   writeFileSync,
   readFileSync,
+  rmSync,
 } from 'fs'
+import * as readline from 'readline'
 import { join, dirname } from 'path'
 import { spawnSync } from 'child_process'
 
@@ -99,6 +101,8 @@ Commands:
   sandbox list        List all sandbox containers
   sandbox stop <name> Stop a specific sandbox container
   sandbox stop all    Stop all running sandbox containers
+  sandbox remove <name>  Remove container and proj folder (with confirmation)
+  sandbox remove all     Remove all sandboxes and proj folders (with confirmation)
   global              Install loop globally to /usr/local/bin
 
 Run Options:
@@ -683,6 +687,218 @@ async function handleSandboxStop(name: string): Promise<void> {
 }
 
 /**
+ * Prompt user for confirmation
+ */
+async function askConfirmation(question: string): Promise<boolean> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  })
+
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close()
+      resolve(answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes')
+    })
+  })
+}
+
+/**
+ * Handle sandbox remove command - remove a specific sandbox container and project folder
+ */
+async function handleSandboxRemove(name: string): Promise<void> {
+  console.log('╔════════════════════════════════════════════════════════════╗')
+  console.log('║                    🐳 Loop Sandbox                         ║')
+  console.log('║                    Remove Container                        ║')
+  console.log('╚════════════════════════════════════════════════════════════╝')
+  console.log('')
+
+  const containerName = name.startsWith('loop-') ? name : `loop-${name}`
+  const projectName = name.startsWith('loop-') ? name.slice(5) : name
+  const projDir = join(process.cwd(), 'proj', projectName)
+
+  // Check what exists
+  const containerResult = spawnSync(
+    'docker',
+    [
+      'ps',
+      '-a',
+      '--filter',
+      `name=^${containerName}$`,
+      '--format',
+      '{{.Names}}',
+    ],
+    { stdio: 'pipe' },
+  )
+  const containerExists = containerResult.stdout?.toString().trim()
+  const projDirExists = existsSync(projDir)
+
+  if (!containerExists && !projDirExists) {
+    console.log(`❌ Nothing found for '${projectName}'`)
+    console.log('')
+    console.log('   Run "loop sandbox list" to see available sandboxes.')
+    process.exit(1)
+  }
+
+  // Show what will be removed
+  console.log('⚠️  The following will be PERMANENTLY removed:')
+  console.log('')
+  if (containerExists) {
+    console.log(`   🐳 Docker container: ${containerName}`)
+  }
+  if (projDirExists) {
+    console.log(`   📁 Project folder:   ${projDir}`)
+  }
+  console.log('')
+
+  // Ask for confirmation
+  const confirmed = await askConfirmation('Are you sure? (y/N): ')
+  if (!confirmed) {
+    console.log('')
+    console.log('❌ Cancelled')
+    return
+  }
+
+  console.log('')
+
+  // Remove container
+  if (containerExists) {
+    console.log(`⏳ Removing container ${containerName}...`)
+    const rmResult = spawnSync('docker', ['rm', '-f', containerName], {
+      stdio: 'pipe',
+    })
+    if (rmResult.status === 0) {
+      console.log(`   ✅ Removed container`)
+    } else {
+      console.log(`   ❌ Failed to remove container`)
+    }
+  }
+
+  // Remove project folder
+  if (projDirExists) {
+    console.log(`⏳ Removing project folder ${projDir}...`)
+    try {
+      rmSync(projDir, { recursive: true, force: true })
+      console.log(`   ✅ Removed project folder`)
+    } catch (err) {
+      console.log(`   ❌ Failed to remove project folder: ${err}`)
+    }
+  }
+
+  console.log('')
+  console.log('✅ Done')
+}
+
+/**
+ * Handle sandbox remove all command - remove all sandbox containers and project folders
+ */
+async function handleSandboxRemoveAll(): Promise<void> {
+  console.log('╔════════════════════════════════════════════════════════════╗')
+  console.log('║                    🐳 Loop Sandbox                         ║')
+  console.log('║                  Remove All Containers                     ║')
+  console.log('╚════════════════════════════════════════════════════════════╝')
+  console.log('')
+
+  // Get all containers with loop- prefix
+  const result = spawnSync(
+    'docker',
+    ['ps', '-a', '--filter', 'name=loop-', '--format', '{{.Names}}'],
+    { stdio: 'pipe' },
+  )
+
+  const output = result.stdout?.toString().trim()
+  const containers = output ? output.split('\n').filter(Boolean) : []
+
+  // Get all project folders
+  const projBaseDir = join(process.cwd(), 'proj')
+  let projectFolders: string[] = []
+  if (existsSync(projBaseDir)) {
+    const { readdirSync, statSync } = await import('fs')
+    try {
+      projectFolders = readdirSync(projBaseDir)
+        .filter((f) => statSync(join(projBaseDir, f)).isDirectory())
+        .map((f) => join(projBaseDir, f))
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  if (containers.length === 0 && projectFolders.length === 0) {
+    console.log('   No sandboxes or project folders found.')
+    return
+  }
+
+  // Show what will be removed
+  console.log('⚠️  The following will be PERMANENTLY removed:')
+  console.log('')
+  if (containers.length > 0) {
+    console.log('   🐳 Docker containers:')
+    for (const c of containers) {
+      console.log(`      - ${c}`)
+    }
+  }
+  if (projectFolders.length > 0) {
+    console.log('   📁 Project folders:')
+    for (const f of projectFolders) {
+      console.log(`      - ${f}`)
+    }
+  }
+  console.log('')
+
+  // Ask for confirmation
+  const confirmed = await askConfirmation(
+    'Are you sure you want to remove ALL sandboxes? (y/N): ',
+  )
+  if (!confirmed) {
+    console.log('')
+    console.log('❌ Cancelled')
+    return
+  }
+
+  console.log('')
+
+  // Remove containers
+  let containersRemoved = 0
+  let containersFailed = 0
+  for (const container of containers) {
+    const rmResult = spawnSync('docker', ['rm', '-f', container], {
+      stdio: 'pipe',
+    })
+    if (rmResult.status === 0) {
+      console.log(`   ✅ Removed container ${container}`)
+      containersRemoved++
+    } else {
+      console.log(`   ❌ Failed to remove container ${container}`)
+      containersFailed++
+    }
+  }
+
+  // Remove project folders
+  let foldersRemoved = 0
+  let foldersFailed = 0
+  for (const folder of projectFolders) {
+    try {
+      rmSync(folder, { recursive: true, force: true })
+      console.log(`   ✅ Removed folder ${folder}`)
+      foldersRemoved++
+    } catch (err) {
+      console.log(`   ❌ Failed to remove folder ${folder}`)
+      foldersFailed++
+    }
+  }
+
+  console.log('')
+  console.log(
+    `   Summary: ${containersRemoved} containers removed, ${foldersRemoved} folders removed`,
+  )
+  if (containersFailed > 0 || foldersFailed > 0) {
+    console.log(
+      `            ${containersFailed} containers failed, ${foldersFailed} folders failed`,
+    )
+  }
+}
+
+/**
  * Handle sandbox stop all command - stop all sandbox containers
  */
 async function handleSandboxStopAll(): Promise<void> {
@@ -1194,6 +1410,20 @@ async function main(): Promise<void> {
         process.exit(1)
       }
       await handleSandboxStop(rawArgs[2])
+      return
+    }
+    if (rawArgs[1] === 'remove' || rawArgs[1] === 'rm') {
+      if (rawArgs[2] === 'all') {
+        await handleSandboxRemoveAll()
+        return
+      }
+      if (!rawArgs[2] || rawArgs[2].startsWith('-')) {
+        console.error('Error: Please provide a sandbox name')
+        console.error('Usage: loop sandbox remove <name>')
+        console.error('       loop sandbox remove all')
+        process.exit(1)
+      }
+      await handleSandboxRemove(rawArgs[2])
       return
     }
     await handleSandbox(rawArgs.slice(1))
