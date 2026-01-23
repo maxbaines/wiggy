@@ -147,6 +147,7 @@ Configuration:
     RALPH_WORKING_DIR   Working directory (default: current directory)
     RALPH_PRD_FILE      Path to PRD file (default: auto-detect)
     RALPH_PROGRESS_FILE Progress file path (default: progress.txt)
+    RALPH_PROGRESS_MODE Progress tracking mode: "git" or "file" (default: git)
     RALPH_VERBOSE       Enable verbose logging (default: false)
 
 PRD Files:

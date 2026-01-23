@@ -1,9 +1,12 @@
 /**
  * Progress tracking for Ralph
- * Maintains a log of completed work between iterations
+ * Supports two modes:
+ * - 'git': Uses last 10 git commit messages (default)
+ * - 'file': Uses progress.txt file (legacy)
  */
 
 import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'fs'
+import { execSync } from 'child_process'
 import type { ProgressEntry, BackPressureCheckResult } from './types.ts'
 
 /**
@@ -130,7 +133,7 @@ ${entry.notes || 'None'}
  */
 export function getProgressSummary(
   filePath: string,
-  lastBackPressureResults?: BackPressureCheckResult[]
+  lastBackPressureResults?: BackPressureCheckResult[],
 ): string {
   const entries = loadProgress(filePath)
 
@@ -200,7 +203,7 @@ export function createProgressEntry(
     decisions?: string[]
     filesChanged?: string[]
     notes?: string
-  } = {}
+  } = {},
 ): ProgressEntry {
   return {
     timestamp: new Date().toISOString(),
@@ -237,4 +240,106 @@ export function getLastIteration(filePath: string): number {
     return 0
   }
   return Math.max(...entries.map((e) => e.iteration))
+}
+
+/**
+ * Get progress from git commit history
+ * Returns the last N commit messages as progress context
+ */
+export function getProgressFromGit(
+  workingDir: string,
+  count: number = 10,
+): string {
+  try {
+    const output = execSync(`git log --oneline -n ${count}`, {
+      cwd: workingDir,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+
+    const commits = output.trim()
+    if (!commits) {
+      return 'No git commits found.'
+    }
+
+    return `Recent Commits (last ${count}):\n\n${commits
+      .split('\n')
+      .map((line) => `- ${line}`)
+      .join('\n')}`
+  } catch {
+    return 'No git history available (not a git repository or no commits).'
+  }
+}
+
+/**
+ * Get progress summary based on mode
+ * - 'git': Returns last 10 git commit messages
+ * - 'file': Returns progress from progress.txt file
+ */
+export function getProgressSummaryByMode(
+  mode: 'git' | 'file',
+  workingDir: string,
+  filePath: string,
+  lastBackPressureResults?: BackPressureCheckResult[],
+): string {
+  let summary = ''
+
+  // If there are back pressure results from the last iteration, show them prominently
+  if (lastBackPressureResults && lastBackPressureResults.length > 0) {
+    const hasFailures = lastBackPressureResults.some((r) => !r.passed)
+
+    if (hasFailures) {
+      summary += '⚠️ **LAST BACK PRESSURE STATUS - FIX BEFORE CONTINUING:**\n\n'
+    } else {
+      summary += '✅ **Last Back Pressure Status:**\n\n'
+    }
+
+    for (const result of lastBackPressureResults) {
+      const icon = result.passed ? '✅' : '❌'
+      summary += `${icon} ${result.name}: ${
+        result.passed ? 'passed' : 'FAILED'
+      }\n`
+      if (!result.passed && result.output) {
+        const errorLines = result.output.split('\n').slice(0, 3)
+        for (const line of errorLines) {
+          summary += `   ${line}\n`
+        }
+      }
+    }
+
+    if (hasFailures) {
+      summary += '\n→ **Fix the failing checks before starting new work!**\n'
+    }
+
+    summary += '\n---\n\n'
+  }
+
+  if (mode === 'git') {
+    summary += getProgressFromGit(workingDir)
+  } else {
+    // File mode - use existing logic
+    const entries = loadProgress(filePath)
+
+    if (entries.length === 0) {
+      summary += 'No previous progress recorded.'
+    } else {
+      summary += `Previous Progress (${entries.length} iterations):\n\n`
+
+      // Show last 5 entries
+      const recentEntries = entries.slice(-5)
+
+      for (const entry of recentEntries) {
+        summary += `Iteration ${entry.iteration}: ${entry.taskDescription}\n`
+        if (entry.decisions.length > 0) {
+          summary += `  Decisions: ${entry.decisions.join(', ')}\n`
+        }
+        if (entry.filesChanged.length > 0) {
+          summary += `  Files: ${entry.filesChanged.join(', ')}\n`
+        }
+        summary += '\n'
+      }
+    }
+  }
+
+  return summary
 }

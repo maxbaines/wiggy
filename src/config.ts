@@ -13,6 +13,7 @@ const DEFAULTS: RalphConfig = {
   maxTokens: 50000,
   workingDir: process.cwd(),
   progressFile: 'progress.txt',
+  progressMode: 'git',
   verbose: false,
 }
 
@@ -101,6 +102,11 @@ export function loadConfig(configFilePath?: string): RalphConfig {
       process.env.RALPH_PROGRESS_FILE ||
       fileConfig.progressFile ||
       DEFAULTS.progressFile,
+
+    progressMode:
+      (process.env.RALPH_PROGRESS_MODE as 'git' | 'file') ||
+      fileConfig.progressMode ||
+      DEFAULTS.progressMode,
 
     verbose:
       process.env.RALPH_VERBOSE === 'true' ||

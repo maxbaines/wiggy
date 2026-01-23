@@ -10,6 +10,7 @@ export interface RalphConfig {
   workingDir: string
   prdFile?: string
   progressFile: string
+  progressMode: 'git' | 'file'
   verbose: boolean
 }
 

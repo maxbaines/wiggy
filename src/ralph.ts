@@ -16,7 +16,7 @@ import {
 } from './prd.ts'
 import {
   initProgressFile,
-  getProgressSummary,
+  getProgressSummaryByMode,
   appendProgress,
   createProgressEntry,
   getLastIteration,
@@ -37,7 +37,7 @@ import {
  */
 function printBanner(): void {
   console.log(
-    formatBox('🤖 Ralph Wiggum', 'Autonomous AI Coding Loop', 'neonCyan')
+    formatBox('🤖 Ralph Wiggum', 'Autonomous AI Coding Loop', 'neonCyan'),
   )
 }
 
@@ -60,7 +60,7 @@ function sendNotification(title: string, message: string): void {
     const { execSync } = require('child_process')
     execSync(
       `osascript -e 'display notification "${message}" with title "${title}"'`,
-      { stdio: 'ignore' }
+      { stdio: 'ignore' },
     )
   } catch {
     // Ignore notification errors
@@ -91,25 +91,29 @@ export async function runRalph(args: RalphArgs): Promise<void> {
 
   if (!prd) {
     console.log(
-      formatWarning('No PRD file found. Ralph will work without a task list.')
+      formatWarning('No PRD file found. Ralph will work without a task list.'),
     )
   }
 
-  // Initialize progress file
+  // Initialize progress file (only needed for file mode)
   const progressPath = join(config.workingDir, config.progressFile)
-  initProgressFile(progressPath)
+  if (config.progressMode === 'file') {
+    initProgressFile(progressPath)
+  }
 
   // Print configuration
   console.log(formatInfo(`Iterations: ${args.iterations}`))
   console.log(formatInfo(`HITL Mode: ${args.hitl}`))
   console.log(formatInfo(`PRD File: ${prdPath || 'None'}`))
-  console.log(formatInfo(`Progress File: ${config.progressFile}`))
+  console.log(formatInfo(`Progress Mode: ${config.progressMode}`))
   console.log(formatInfo(`Working Dir: ${config.workingDir}`))
   console.log()
 
   // Initialize loop state
+  // For git mode, always start at 0 since we don't track iteration numbers
   const state: LoopState = {
-    iteration: getLastIteration(progressPath),
+    iteration:
+      config.progressMode === 'file' ? getLastIteration(progressPath) : 0,
     maxIterations: args.iterations,
     prd,
     progress: [],
@@ -127,7 +131,9 @@ export async function runRalph(args: RalphArgs): Promise<void> {
     // HITL mode: pause before each iteration (except first)
     if (args.hitl && i > 1) {
       console.log(
-        formatWarning('HITL Mode: Press Enter to continue or Ctrl+C to stop...')
+        formatWarning(
+          'HITL Mode: Press Enter to continue or Ctrl+C to stop...',
+        ),
       )
       await waitForEnter()
     }
@@ -143,12 +149,16 @@ export async function runRalph(args: RalphArgs): Promise<void> {
     const prdSummary = prd
       ? getPrdSummary(prd)
       : 'No PRD file. Work on improving the codebase.'
-    const progressSummary = getProgressSummary(progressPath)
+    const progressSummary = getProgressSummaryByMode(
+      config.progressMode,
+      config.workingDir,
+      progressPath,
+    )
     const agentsMd = loadAgentsMd(config.workingDir)
     const systemPrompt = createSystemPrompt(
       prdSummary,
       progressSummary,
-      agentsMd
+      agentsMd,
     )
 
     // Run the iteration
@@ -158,23 +168,25 @@ export async function runRalph(args: RalphArgs): Promise<void> {
     if (result.success) {
       console.log(formatSuccess(result.taskDescription || 'Task completed'))
 
-      // Record progress
-      const entry = createProgressEntry(
-        state.iteration,
-        result.taskDescription || 'Task completed',
-        {
-          decisions: result.decisions,
-          filesChanged: result.filesChanged,
-          notes: result.summary,
-        }
-      )
-      appendProgress(progressPath, entry)
+      // Record progress (only in file mode)
+      if (config.progressMode === 'file') {
+        const entry = createProgressEntry(
+          state.iteration,
+          result.taskDescription || 'Task completed',
+          {
+            decisions: result.decisions,
+            filesChanged: result.filesChanged,
+            notes: result.summary,
+          },
+        )
+        appendProgress(progressPath, entry)
+      }
 
       // Mark task as complete in PRD if we have one
       if (prd && prdPath && result.taskDescription) {
         const updatedPrd = markItemCompleteByDescription(
           prd,
-          result.taskDescription
+          result.taskDescription,
         )
         if (updatedPrd) {
           savePrd(prdPath, updatedPrd)
@@ -197,8 +209,8 @@ export async function runRalph(args: RalphArgs): Promise<void> {
       if (!args.hitl) {
         console.log(
           formatWarning(
-            'Stopping due to error. Use --hitl mode to continue despite errors.'
-          )
+            'Stopping due to error. Use --hitl mode to continue despite errors.',
+          ),
         )
         break
       }
@@ -212,24 +224,24 @@ export async function runRalph(args: RalphArgs): Promise<void> {
       formatBox(
         '✅ PRD COMPLETE',
         `All tasks finished after ${state.iteration} iterations`,
-        'neonGreen'
-      )
+        'neonGreen',
+      ),
     )
     sendNotification(
       'Ralph Wiggum',
-      `PRD complete after ${state.iteration} iterations`
+      `PRD complete after ${state.iteration} iterations`,
     )
   } else {
     console.log(
       formatBox(
         '⚠️  Max iterations reached',
         'PRD may not be complete',
-        'neonYellow'
-      )
+        'neonYellow',
+      ),
     )
     sendNotification(
       'Ralph Wiggum',
-      `Max iterations (${args.iterations}) reached`
+      `Max iterations (${args.iterations}) reached`,
     )
   }
 }

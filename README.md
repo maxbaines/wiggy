@@ -15,7 +15,7 @@ Loop operates as an **autonomous coding agent** that iteratively works through t
 Each iteration follows this pattern:
 
 1. **Read PRD** - Loop reads your `prd.md` file to understand what needs to be built
-2. **Check Progress** - Reviews `progress.txt` to see what's already been completed
+2. **Check Progress** - Reviews recent git commits (or `progress.txt` in file mode) to see what's already been completed
 3. **Pick a Task** - Selects the next uncompleted task from the PRD
 4. **Execute** - Uses available tools (file operations, terminal commands, git) to implement the task
 5. **Run Checks** - Executes back pressure checks from `AGENTS.md` (typecheck, lint, test, build)
@@ -56,7 +56,7 @@ loop do "Fix current build errors and package as an app"
 | ----------------- | ----------------------------------------------------------------------- |
 | **Iteration**     | One complete cycle of: pick task → implement → check → commit           |
 | **PRD**           | The task list that defines what Loop should build                       |
-| **Progress**      | Tracks completed tasks so Loop can resume where it left off             |
+| **Progress**      | Tracks completed tasks via git commits (default) or progress.txt file   |
 | **Back Pressure** | Quality checks (typecheck, lint, test) that must pass before committing |
 | **HITL Mode**     | Human-in-the-loop - pauses between iterations for manual review         |
 
@@ -241,6 +241,7 @@ RALPH_MAX_TOKENS=8192
 RALPH_WORKING_DIR=.
 RALPH_PRD_FILE=plans/prd.json
 RALPH_PROGRESS_FILE=progress.txt
+RALPH_PROGRESS_MODE=git    # "git" (default) or "file"
 RALPH_VERBOSE=false
 ```
 
@@ -255,9 +256,25 @@ Create `ralph.config.json`:
   "maxTokens": 8192,
   "workingDir": ".",
   "progressFile": "progress.txt",
+  "progressMode": "git",
   "verbose": false
 }
 ```
+
+### Progress Tracking Modes
+
+Loop supports two modes for tracking progress between iterations:
+
+| Mode   | Description                                                                |
+| ------ | -------------------------------------------------------------------------- |
+| `git`  | **(Default)** Uses last 10 git commit messages as context. No extra files. |
+| `file` | Uses `progress.txt` file to track iterations (legacy behavior).            |
+
+**Git mode** is recommended because:
+
+- No extra files to manage
+- Uses actual commit history as source of truth
+- Works naturally with git-based workflows
 
 ## PRD Generator
 
