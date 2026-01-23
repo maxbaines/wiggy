@@ -239,56 +239,49 @@ export function formatCodeBlock(
 }
 
 /**
- * Format a file change notification
+ * Format a file change notification - compact single line
  */
 export function formatFileChange(
   path: string,
   type: 'create' | 'modify' | 'delete',
-  content?: string,
+  _content?: string,
 ): string {
   let icon: string
   let color: string
   let label: string
-  let codeType: 'new' | 'changed' | 'deleted'
 
   switch (type) {
     case 'create':
       icon = '📄'
       color = colors.neonGreen
-      label = '[NEW FILE]'
-      codeType = 'new'
+      label = 'Created'
       break
     case 'modify':
       icon = '📝'
       color = colors.neonYellow
-      label = '[MODIFIED]'
-      codeType = 'changed'
+      label = 'Modified'
       break
     case 'delete':
       icon = '🗑️'
       color = colors.neonRed
-      label = '[DELETED]'
-      codeType = 'deleted'
+      label = 'Deleted'
       break
   }
 
-  const title = `${icon} ${path} ${label}`
-
-  let output = '\n'
-  output += colors.blue + '━'.repeat(65) + colors.reset + '\n'
-  output += '\n'
-  output += color + colors.bold + title + colors.reset + '\n'
-
-  // Show content preview if provided
-  if (content) {
-    const preview =
-      content.length > 300 ? content.substring(0, 300) + '...' : content
-    output += formatCodeBlock(preview, codeType)
-  }
-
-  output += '\n'
-
-  return output
+  // Compact single-line format: 📝 Modified → /path/to/file.ts
+  return (
+    '\n' +
+    color +
+    icon +
+    ' ' +
+    label +
+    colors.reset +
+    colors.gray +
+    ' → ' +
+    path +
+    colors.reset +
+    '\n'
+  )
 }
 
 /**
@@ -384,4 +377,35 @@ export function formatWarning(message: string): string {
  */
 export function formatInfo(message: string): string {
   return colors.neonCyan + 'ℹ ' + colors.reset + message
+}
+
+/**
+ * Format Claude's thought/reasoning text - shows AI's next step clearly
+ */
+export function formatThought(text: string): string {
+  // Skip empty or whitespace-only text
+  if (!text.trim()) {
+    return ''
+  }
+
+  // Add thought bubble prefix and subtle styling
+  const lines = text.split('\n')
+  let output = '\n'
+
+  for (const line of lines) {
+    if (line.trim()) {
+      output +=
+        colors.neonMagenta +
+        '💭 ' +
+        colors.reset +
+        colors.dim +
+        line +
+        colors.reset +
+        '\n'
+    } else {
+      output += '\n'
+    }
+  }
+
+  return output
 }

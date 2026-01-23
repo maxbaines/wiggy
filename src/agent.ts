@@ -12,7 +12,12 @@ import {
 import { existsSync } from 'fs'
 import type { RalphConfig } from './types.ts'
 import { COMPLETION_MARKER } from './types.ts'
-import { formatToolCall, formatFileChange, formatInfo } from './output.ts'
+import {
+  formatToolCall,
+  formatFileChange,
+  formatInfo,
+  formatThought,
+} from './output.ts'
 
 /**
  * Find the Claude Code CLI executable path
@@ -290,7 +295,11 @@ export async function runIteration(
           if (block.type === 'text') {
             fullOutput += block.text + '\n'
             if (verbose) {
-              console.log(block.text)
+              // Format Claude's thoughts/reasoning with visual indicator
+              const formatted = formatThought(block.text)
+              if (formatted) {
+                console.log(formatted)
+              }
             }
 
             // Check for completion marker
