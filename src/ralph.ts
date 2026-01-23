@@ -4,6 +4,7 @@
  */
 
 import { existsSync, readFileSync } from 'fs'
+import { execSync } from 'child_process'
 import { join } from 'path'
 import type { RalphConfig, RalphArgs, LoopState } from './types.ts'
 import { loadConfig, validateConfig, findPrdFile } from './config.ts'
@@ -51,6 +52,43 @@ function loadAgentsMd(workingDir: string): string | undefined {
     return readFileSync(agentsPath, 'utf-8')
   }
   return undefined
+}
+
+/**
+ * Check for uncommitted changes in the working directory
+ */
+function checkForUncommittedChanges(workingDir: string): boolean {
+  try {
+    const output = execSync('git status --porcelain', {
+      cwd: workingDir,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    return output.trim().length > 0
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Auto-commit any uncommitted changes with a fallback message
+ */
+function autoCommitChanges(workingDir: string, message: string): boolean {
+  try {
+    execSync('git add -A', {
+      cwd: workingDir,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, {
+      cwd: workingDir,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -228,6 +266,44 @@ export async function runRalph(args: RalphArgs): Promise<void> {
 
     if (result.success) {
       console.log(formatSuccess(result.taskDescription || 'Task completed'))
+
+      // Verify git commit was made - check for uncommitted changes
+      const hasUncommittedChanges = checkForUncommittedChanges(
+        config.workingDir,
+      )
+      if (hasUncommittedChanges) {
+        console.log(
+          formatWarning(
+            '⚠️  Uncommitted changes detected! Agent may have forgotten to commit.',
+          ),
+        )
+        // Auto-commit with a fallback message to ensure progress is tracked
+        const fallbackCommitMessage = `chore: Auto-commit for iteration ${state.iteration}
+
+WHAT: Changes from Ralph iteration ${state.iteration}
+- Task: ${result.taskDescription || 'Task completed'}
+${result.filesChanged?.length ? `- Files: ${result.filesChanged.join(', ')}` : ''}
+
+WHY: Agent did not commit - auto-committed to preserve progress tracking
+
+NEXT: Review this commit and ensure proper commit messages in future iterations`
+
+        const commitSuccess = autoCommitChanges(
+          config.workingDir,
+          fallbackCommitMessage,
+        )
+        if (commitSuccess) {
+          console.log(
+            formatInfo('  → Auto-committed changes to preserve progress'),
+          )
+        } else {
+          console.log(
+            formatWarning(
+              '  → Failed to auto-commit - changes may be lost for progress tracking',
+            ),
+          )
+        }
+      }
 
       // Record progress (only in file mode)
       if (config.progressMode === 'file') {

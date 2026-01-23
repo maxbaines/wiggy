@@ -244,28 +244,37 @@ export function getLastIteration(filePath: string): number {
 
 /**
  * Get progress from git commit history
- * Returns the last N commit messages as progress context
+ * Returns the last N commit messages with full body as progress context
  */
 export function getProgressFromGit(
   workingDir: string,
   count: number = 10,
 ): string {
   try {
-    const output = execSync(`git log --oneline -n ${count}`, {
-      cwd: workingDir,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
+    // Use format that shows hash, subject, and full body for detailed context
+    // %h = short hash, %s = subject line, %b = body, %n = newline
+    const output = execSync(
+      `git log -n ${count} --no-merges --format="[%h] %s%n%b%n---"`,
+      {
+        cwd: workingDir,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    )
 
     const commits = output.trim()
     if (!commits) {
       return 'No git commits found.'
     }
 
-    return `Recent Commits (last ${count}):\n\n${commits
-      .split('\n')
-      .map((line) => `- ${line}`)
-      .join('\n')}`
+    // Clean up the output - remove empty lines between commits and trailing ---
+    const cleanedCommits = commits
+      .split('---')
+      .filter((c) => c.trim())
+      .map((c) => c.trim())
+      .join('\n\n---\n\n')
+
+    return `Recent Commits (last ${count}):\n\n${cleanedCommits}`
   } catch {
     return 'No git history available (not a git repository or no commits).'
   }

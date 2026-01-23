@@ -181,11 +181,37 @@ ${progressSummary}
 ${backPressureInstructions}
 ${agentsMd ? `### Project Guidelines (AGENTS.md)\n${agentsMd}` : ''}
 
+## CRITICAL: Git Commit = Next Iteration's Context
+
+Your git commit message is THE PRIMARY WAY progress is tracked between iterations.
+The next iteration will see your commit messages to understand what was done.
+
+**Write detailed, multi-line commit messages:**
+
+\`\`\`bash
+git add -A && git commit -m "feat: Brief summary of what was done
+
+WHAT: Describe the specific changes made
+- File/component changes
+- New features or fixes
+
+WHY: Explain key decisions
+- Why this approach over alternatives
+- Any tradeoffs made
+
+NEXT: Note any follow-up work needed (optional)
+- Blockers or dependencies
+- Related tasks to tackle next"
+\`\`\`
+
+**Bad commit:** \`git commit -m "fix stuff"\`
+**Good commit:** Multi-line with WHAT/WHY/NEXT sections
+
 ## Completion
 
 When you have completed a task:
 1. Run all back pressure checks using Bash
-2. Make a git commit: \`git add -A && git commit -m "descriptive message"\`
+2. Make a DETAILED git commit (see format above) - this is essential!
 3. Report what you did using this EXACT format:
 
 ## Changes Made
