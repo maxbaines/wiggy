@@ -274,9 +274,10 @@ export async function runIteration(
         preset: 'claude_code',
         append: systemPrompt,
       },
-      // Auto-allow safe read-only tools for autonomous operation
-      allowedTools: ['Read', 'Glob', 'Grep'],
-      // Permission mode for autonomous operation
+      // Auto-allow tools for autonomous operation
+      // In production, this runs in a sandboxed Docker container
+      allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Write', 'Edit'],
+      // Permission mode for autonomous operation - acceptEdits allows file changes
       permissionMode: 'acceptEdits',
       // Add hooks for tool execution monitoring
       hooks: createHooks(verbose),
