@@ -28,8 +28,9 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
 # Install Claude Code CLI (required by Claude Agent SDK)
+# The install script puts it in ~/.local/bin
 RUN curl -fsSL https://claude.ai/install.sh | bash
-ENV PATH="/root/.claude/local/bin:${PATH}"
+ENV PATH="/root/.local/bin:/root/.claude/local/bin:${PATH}"
 
 # Install ttyd for web terminal
 RUN curl -L -o /usr/local/bin/ttyd \

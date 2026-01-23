@@ -22,14 +22,21 @@ import { savePrd } from './prd.ts'
 
 /**
  * Find the Claude Code CLI executable path
+ * Checks common installation locations and environment variable
  */
 function findClaudeCodePath(): string | undefined {
   const possiblePaths = [
+    // Check environment variable first (allows custom path)
+    process.env.CLAUDE_CODE_PATH,
+    // Ubuntu/Linux default install location (most common)
+    `${process.env.HOME}/.local/bin/claude`,
+    '/root/.local/bin/claude', // Docker root user
+    // Other common locations
     '/usr/local/bin/claude',
-    '/root/.claude/local/bin/claude',
     `${process.env.HOME}/.claude/local/bin/claude`,
-    '/opt/homebrew/bin/claude',
-  ]
+    '/root/.claude/local/bin/claude',
+    '/opt/homebrew/bin/claude', // macOS Homebrew
+  ].filter(Boolean) as string[] // Remove undefined entries
 
   for (const path of possiblePaths) {
     if (existsSync(path)) {
