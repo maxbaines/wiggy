@@ -88,9 +88,11 @@ export class KeyboardListener extends EventEmitter {
       this.isInterrupted = true
       this.emit('intervention')
     } else if (key === CTRL_C) {
-      // Allow Ctrl+C to exit
+      // Allow Ctrl+C to exit - restore terminal state first
+      console.log('\n^C')
       this.stop()
-      process.exit(0)
+      // Send SIGINT to properly terminate the process and any child processes
+      process.kill(process.pid, 'SIGINT')
     }
   }
 
