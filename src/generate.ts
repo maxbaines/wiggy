@@ -1,19 +1,44 @@
 /**
  * PRD Generator for Loop
- * Uses Claude to generate structured PRD files from natural language descriptions
+ * Uses Claude Agent SDK to generate structured PRD files from natural language descriptions
  */
 
-import Anthropic from '@anthropic-ai/sdk'
+import {
+  query,
+  type SDKResultMessage,
+  type Options,
+} from '@anthropic-ai/claude-agent-sdk'
 import {
   existsSync,
   readFileSync,
   readdirSync,
   statSync,
   writeFileSync,
+  unlinkSync,
 } from 'fs'
 import { join } from 'path'
 import type { PrdJson, RalphConfig } from './types.ts'
 import { savePrd } from './prd.ts'
+
+/**
+ * Find the Claude Code CLI executable path
+ */
+function findClaudeCodePath(): string | undefined {
+  const possiblePaths = [
+    '/usr/local/bin/claude',
+    '/root/.claude/local/bin/claude',
+    `${process.env.HOME}/.claude/local/bin/claude`,
+    '/opt/homebrew/bin/claude',
+  ]
+
+  for (const path of possiblePaths) {
+    if (existsSync(path)) {
+      return path
+    }
+  }
+
+  return undefined
+}
 
 /**
  * System prompt for PRD generation
@@ -84,6 +109,108 @@ Brief description of the project
 Return ONLY the Markdown content. No code blocks, no explanations, just the PRD in Markdown format.`
 
 /**
+ * System prompt for AGENTS.md generation
+ */
+const AGENTS_GENERATION_PROMPT = `Generate an AGENTS.md file for AI coding agents.
+
+## Required Sections
+
+# AGENTS.md
+
+## Project overview
+[One sentence: what this project does]
+
+## Setup commands
+- Install: \`[command]\`
+- Build: \`[command]\`
+- Run: \`[command]\`
+
+## Back pressure (required checks before commit)
+- Build: \`[command]\`
+- Typecheck: \`[command]\`
+- Lint: \`[command]\`
+- Test: \`[command]\`
+
+## Testing instructions
+- [How to run tests]
+- All tests must pass before merge
+
+## Code style
+- [Key conventions for this language/framework]
+
+## What NOT to do
+- Don't skip tests
+- Don't commit with failing checks
+- [Project-specific anti-patterns]
+
+## Rules
+
+1. Output ONLY Markdown - no code block wrappers
+2. Include ALL sections above
+3. Use actual commands for the detected project type
+4. Back pressure section is critical - always include real commands
+5. NEVER hardcode specific paths, project names, or scheme names in commands`
+
+/**
+ * Generate content using Claude Agent SDK
+ */
+async function generateWithAgent(
+  prompt: string,
+  systemPrompt: string,
+  config: RalphConfig,
+  options: {
+    useTools?: boolean
+    verbose?: boolean
+  } = {},
+): Promise<string> {
+  const claudeCodePath = findClaudeCodePath()
+  if (!claudeCodePath) {
+    throw new Error(
+      'Claude Code CLI not found. Install it with: curl -fsSL https://claude.ai/install.sh | bash',
+    )
+  }
+
+  const queryOptions: Options = {
+    cwd: config.workingDir,
+    model: config.model,
+    maxTurns: options.useTools ? 20 : 1,
+    pathToClaudeCodeExecutable: claudeCodePath,
+    // Use tools for codebase analysis if requested
+    tools: options.useTools ? ['Read', 'Glob', 'Grep'] : [],
+    systemPrompt: systemPrompt,
+    // Auto-allow read-only tools
+    allowedTools: ['Read', 'Glob', 'Grep'],
+    permissionMode: 'default',
+  }
+
+  let result = ''
+
+  for await (const message of query({ prompt, options: queryOptions })) {
+    if (message.type === 'assistant') {
+      for (const block of message.message.content) {
+        if (block.type === 'text') {
+          result += block.text
+        }
+      }
+    }
+
+    if (message.type === 'result') {
+      const resultMsg = message as SDKResultMessage
+      if (resultMsg.subtype === 'success' && 'result' in resultMsg) {
+        // Use the final result if available
+        if (resultMsg.result) {
+          result = resultMsg.result
+        }
+      } else if ('errors' in resultMsg && resultMsg.errors.length > 0) {
+        throw new Error(resultMsg.errors.join(', '))
+      }
+    }
+  }
+
+  return result.trim()
+}
+
+/**
  * Generate a PRD from a natural language description
  */
 export async function generatePrd(
@@ -94,54 +221,42 @@ export async function generatePrd(
     existingFiles?: string[]
   } = {},
 ): Promise<PrdJson> {
-  const client = new Anthropic({
-    apiKey: config.apiKey,
-    timeout: 5 * 60 * 1000, // 5 minutes
-  })
+  // Build the prompt
+  let prompt = `Generate a PRD for the following project:\n\n## Project Description\n${description}\n\n`
 
-  // Build context
-  let context = `## Project Description\n${description}\n\n`
-
-  if (options.analyzeCodebase && options.existingFiles) {
-    context += `## Existing Files\n${options.existingFiles.join('\n')}\n\n`
+  if (options.analyzeCodebase) {
+    prompt += `Please use the Glob and Read tools to analyze the codebase structure and understand the existing code before generating the PRD.\n\n`
   }
 
-  const response = await client.messages.create({
-    model: config.model,
-    max_tokens: 4096,
-    system: PRD_GENERATION_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: `Generate a PRD for the following project:\n\n${context}`,
-      },
-    ],
-  })
-
-  // Extract Markdown from response
-  const textContent = response.content.find((block) => block.type === 'text')
-  if (!textContent || textContent.type !== 'text') {
-    throw new Error('No text response from Claude')
+  if (options.existingFiles && options.existingFiles.length > 0) {
+    prompt += `## Existing Files\n${options.existingFiles.slice(0, 50).join('\n')}\n\n`
   }
 
-  let markdown = textContent.text.trim()
+  prompt += `Now generate the PRD in Markdown format.`
 
-  // Remove markdown code block wrapper if present
+  const markdown = await generateWithAgent(
+    prompt,
+    PRD_GENERATION_PROMPT,
+    config,
+    { useTools: options.analyzeCodebase },
+  )
+
+  // Clean up markdown
+  let cleanMarkdown = markdown
   const mdMatch = markdown.match(/```(?:markdown|md)?\s*([\s\S]*?)```/)
   if (mdMatch) {
-    markdown = mdMatch[1].trim()
+    cleanMarkdown = mdMatch[1].trim()
   }
 
   // Write to temp file and parse it
   const tempPath = join(config.workingDir, '.prd.tmp.md')
-  writeFileSync(tempPath, markdown, 'utf-8')
+  writeFileSync(tempPath, cleanMarkdown, 'utf-8')
 
   // Import loadPrd to parse the markdown
   const { loadPrd } = await import('./prd.ts')
   const prd = loadPrd(tempPath)
 
   // Clean up temp file
-  const { unlinkSync } = await import('fs')
   try {
     unlinkSync(tempPath)
   } catch {
@@ -246,38 +361,18 @@ export async function refinePrd(
   feedback: string,
   config: RalphConfig,
 ): Promise<PrdJson> {
-  const client = new Anthropic({
-    apiKey: config.apiKey,
-    timeout: 5 * 60 * 1000,
-  })
+  const prompt = `Here is an existing PRD:\n\n${JSON.stringify(
+    prd,
+    null,
+    2,
+  )}\n\nPlease refine it based on this feedback:\n${feedback}\n\nReturn the updated PRD as JSON.`
 
-  const response = await client.messages.create({
-    model: config.model,
-    max_tokens: 4096,
-    system: PRD_GENERATION_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: `Here is an existing PRD:\n\n${JSON.stringify(
-          prd,
-          null,
-          2,
-        )}\n\nPlease refine it based on this feedback:\n${feedback}\n\nReturn the updated PRD as JSON.`,
-      },
-    ],
-  })
-
-  const textContent = response.content.find((block) => block.type === 'text')
-  if (!textContent || textContent.type !== 'text') {
-    throw new Error('No text response from Claude')
-  }
-
-  const jsonText = textContent.text.trim()
+  const result = await generateWithAgent(prompt, PRD_GENERATION_PROMPT, config)
 
   try {
-    return normalizePrd(JSON.parse(jsonText))
+    return normalizePrd(JSON.parse(result))
   } catch {
-    const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/)
+    const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/)
     if (jsonMatch) {
       return normalizePrd(JSON.parse(jsonMatch[1].trim()))
     }
@@ -332,59 +427,9 @@ export async function generateAndSavePrd(
 }
 
 /**
- * System prompt for AGENTS.md generation
- * Follows the open AGENTS.md standard (https://agents.md)
- */
-const AGENTS_GENERATION_PROMPT = `Generate an AGENTS.md file for AI coding agents.
-
-## Required Sections
-
-# AGENTS.md
-
-## Project overview
-[One sentence: what this project does]
-
-## Setup commands
-- Install: \`[command]\`
-- Build: \`[command]\`
-- Run: \`[command]\`
-
-## Back pressure (required checks before commit)
-- Build: \`[command]\`
-- Typecheck: \`[command]\`
-- Lint: \`[command]\`
-- Test: \`[command]\`
-
-## Testing instructions
-- [How to run tests]
-- All tests must pass before merge
-
-## Code style
-- [Key conventions for this language/framework]
-
-## What NOT to do
-- Don't skip tests
-- Don't commit with failing checks
-- [Project-specific anti-patterns]
-
-## Rules
-
-1. Output ONLY Markdown - no code block wrappers
-2. Include ALL sections above
-3. Use actual commands for the detected project type
-4. Back pressure section is critical - always include real commands
-5. NEVER hardcode specific paths, project names, or scheme names in commands
-   - Use generic commands that work from the project root
-   - For Xcode: use \`xcodebuild\` without -project flag (auto-discovers .xcodeproj)
-   - For Swift Package Manager: use \`swift build\` and \`swift test\`
-   - Commands should work regardless of subfolder structure`
-
-/**
  * Detect project type from files
  */
 function detectProjectType(files: string[]): string {
-  const fileSet = new Set(files.map((f) => f.toLowerCase()))
-
   if (
     files.some(
       (f) => f.endsWith('Package.swift') || f.includes('Package.swift'),
@@ -454,20 +499,16 @@ export async function generateAgentsMd(
   options: {
     existingFiles?: string[]
     projectDocs?: string
+    analyzeCodebase?: boolean
   } = {},
 ): Promise<string> {
-  const client = new Anthropic({
-    apiKey: config.apiKey,
-    timeout: 5 * 60 * 1000,
-  })
-
   // Detect project type
   const projectType = options.existingFiles
     ? detectProjectType(options.existingFiles)
     : 'Unknown'
 
   // Build a more structured user message
-  let userMessage = `Generate a complete AGENTS.md file for this project.
+  let prompt = `Generate a complete AGENTS.md file for this project.
 
 IMPORTANT: Your output MUST include ALL required sections (Project overview, Setup commands, Back pressure, Testing instructions, Code style, What NOT to do). Do NOT just output a file tree.
 
@@ -480,9 +521,11 @@ IMPORTANT: Your output MUST include ALL required sections (Project overview, Set
 **Detected Project Type:** ${projectType}
 `
 
+  if (options.analyzeCodebase) {
+    prompt += `\nPlease use the Glob and Read tools to analyze the codebase and understand the build/test setup before generating AGENTS.md.\n`
+  }
+
   if (options.existingFiles && options.existingFiles.length > 0) {
-    // Summarize files instead of listing all
-    const fileCount = options.existingFiles.length
     const keyFiles = options.existingFiles
       .filter(
         (f) =>
@@ -493,51 +536,26 @@ IMPORTANT: Your output MUST include ALL required sections (Project overview, Set
           f.endsWith('pyproject.toml') ||
           f.endsWith('CMakeLists.txt') ||
           f.endsWith('Makefile') ||
-          f.endsWith('README.md') ||
-          f.endsWith('.swift') ||
-          f.endsWith('.ts') ||
-          f.endsWith('.rs') ||
-          f.endsWith('.go') ||
-          f.endsWith('.py'),
+          f.endsWith('README.md'),
       )
-      .slice(0, 20) // Limit to 20 key files
+      .slice(0, 20)
 
-    userMessage += `
-**Project has ${fileCount} files. Key files include:**
-${keyFiles.join('\n')}
-`
+    prompt += `\n**Key files:** ${keyFiles.join(', ')}\n`
   }
 
   if (options.projectDocs) {
-    // Include first 500 chars of README
     const docPreview = options.projectDocs.slice(0, 500)
-    userMessage += `
-**README excerpt:**
-${docPreview}${options.projectDocs.length > 500 ? '...' : ''}
-`
+    prompt += `\n**README excerpt:**\n${docPreview}${options.projectDocs.length > 500 ? '...' : ''}\n`
   }
 
-  userMessage += `
-Now generate the complete AGENTS.md file with all required sections.`
+  prompt += `\nNow generate the complete AGENTS.md file with all required sections.`
 
-  const response = await client.messages.create({
-    model: config.model,
-    max_tokens: 4096,
-    system: AGENTS_GENERATION_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: userMessage,
-      },
-    ],
-  })
-
-  const textContent = response.content.find((block) => block.type === 'text')
-  if (!textContent || textContent.type !== 'text') {
-    throw new Error('No text response from Claude')
-  }
-
-  let markdown = textContent.text.trim()
+  let markdown = await generateWithAgent(
+    prompt,
+    AGENTS_GENERATION_PROMPT,
+    config,
+    { useTools: options.analyzeCodebase },
+  )
 
   // Remove markdown code block wrapper if present
   const mdMatch = markdown.match(/```(?:markdown|md)?\s*([\s\S]*?)```/)
@@ -581,6 +599,7 @@ export async function generateAndSaveAgentsMd(
   const agentsMd = await generateAgentsMd(description, config, {
     existingFiles,
     projectDocs,
+    analyzeCodebase: options.analyzeCodebase,
   })
 
   writeFileSync(outputPath, agentsMd, 'utf-8')
@@ -647,6 +666,7 @@ export async function generateProjectFiles(
   const agentsMd = await generateAgentsMd(description, config, {
     existingFiles,
     projectDocs,
+    analyzeCodebase: options.analyzeCodebase,
   })
 
   writeFileSync(agentsPath, agentsMd, 'utf-8')
