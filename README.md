@@ -51,6 +51,21 @@ The agent has access to powerful built-in tools:
 | ------------------- | --------------------------------------------- |
 | **AskUserQuestion** | Ask clarifying questions with multiple choice |
 
+## Prerequisites
+
+- **Bun** (or Node.js 18+)
+- **Claude Code CLI** - Required by the Agent SDK
+
+### Install Claude Code CLI
+
+```bash
+# macOS/Linux/WSL
+curl -fsSL https://claude.ai/install.sh | bash
+
+# Then authenticate
+claude
+```
+
 ## Installation
 
 ```bash

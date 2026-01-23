@@ -27,6 +27,10 @@ RUN git config --global credential.helper 'cache --timeout=3600'
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
+# Install Claude Code CLI (required by Claude Agent SDK)
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/root/.claude/local/bin:${PATH}"
+
 # Install ttyd for web terminal
 RUN curl -L -o /usr/local/bin/ttyd \
     https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 \

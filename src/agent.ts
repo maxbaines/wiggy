@@ -13,9 +13,31 @@ import {
   type PreToolUseHookInput,
   type PostToolUseHookInput,
 } from '@anthropic-ai/claude-agent-sdk'
+import { existsSync } from 'fs'
 import type { RalphConfig } from './types.ts'
 import { COMPLETION_MARKER } from './types.ts'
 import { formatToolCall, formatFileChange, formatInfo } from './output.ts'
+
+/**
+ * Find the Claude Code CLI executable path
+ * Checks common installation locations
+ */
+function findClaudeCodePath(): string | undefined {
+  const possiblePaths = [
+    '/usr/local/bin/claude',
+    '/root/.claude/local/bin/claude',
+    `${process.env.HOME}/.claude/local/bin/claude`,
+    '/opt/homebrew/bin/claude',
+  ]
+
+  for (const path of possiblePaths) {
+    if (existsSync(path)) {
+      return path
+    }
+  }
+
+  return undefined
+}
 
 /**
  * Parse structured output from agent response
@@ -240,11 +262,25 @@ export async function runIteration(
   let isComplete = false
 
   try {
+    // Find Claude Code CLI path
+    const claudeCodePath = findClaudeCodePath()
+    if (!claudeCodePath) {
+      return {
+        success: false,
+        isComplete: false,
+        error:
+          'Claude Code CLI not found. Install it with: curl -fsSL https://claude.ai/install.sh | bash',
+        output: '',
+      }
+    }
+
     // Configure the agent query options
     const options: Options = {
       cwd: config.workingDir,
       model: config.model,
       maxTurns: 50, // Allow up to 50 tool calls per iteration
+      // Path to Claude Code CLI executable (auto-detected)
+      pathToClaudeCodeExecutable: claudeCodePath,
       // Use Claude Code's default tools plus web and interactive tools
       tools: [
         'Read',
