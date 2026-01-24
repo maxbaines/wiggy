@@ -13,16 +13,13 @@ import {
   getPrdSummary,
   isPrdComplete,
   getIncompleteItems,
-  markItemCompleteByDescription,
-  savePrd,
 } from './prd.ts'
 import {
   initProgressFile,
   getProgressSummaryByMode,
-  appendProgress,
-  createProgressEntry,
   getLastIteration,
 } from './progress.ts'
+import { executeCompleteTask, type CompleteTaskConfig } from './tools/index.ts'
 import {
   createSystemPrompt,
   createTaskImplementationPrompt,
@@ -390,31 +387,45 @@ NEXT: Review this commit and ensure proper commit messages in future iterations`
         }
       }
 
-      // Record progress (only in file mode)
-      if (config.progressMode === 'file') {
-        const entry = createProgressEntry(
-          state.iteration,
-          result.taskDescription || 'Task completed',
-          {
-            decisions: result.decisions,
-            filesChanged: result.filesChanged,
-            notes: result.summary,
-          },
-        )
-        appendProgress(progressPath, entry)
-      }
+      // Use CompleteTask tool for atomic completion (progress + PRD marking)
+      // This ensures all completion actions happen together
+      if (result.taskDescription) {
+        const completeTaskConfig: CompleteTaskConfig = {
+          workingDir: config.workingDir,
+          prdPath: prdPath || undefined,
+          progressPath:
+            config.progressMode === 'file' ? progressPath : undefined,
+          progressMode: config.progressMode,
+          iteration: state.iteration,
+        }
 
-      // Mark task as complete in PRD if we have one
-      if (state.prd && prdPath && result.taskDescription) {
-        const updatedPrd = markItemCompleteByDescription(
-          state.prd,
-          result.taskDescription,
+        const completionResult = await executeCompleteTask(
+          {
+            taskDescription: result.taskDescription,
+            commitMessage: `chore: Complete task - ${result.taskDescription}
+
+WHAT: Task completed by Ralph iteration ${state.iteration}
+${result.filesChanged?.length ? `- Files: ${result.filesChanged.join(', ')}` : ''}
+
+WHY: Automated task completion via CompleteTask tool`,
+            filesChanged: result.filesChanged,
+            decisions: result.decisions,
+            summary: result.summary,
+          },
+          completeTaskConfig,
         )
-        if (updatedPrd) {
-          savePrd(prdPath, updatedPrd)
-          // Update our in-memory copy
-          state.prd = updatedPrd
-          console.log(formatSuccess('  → Marked task as [DONE] in PRD'))
+
+        console.log(formatInfo(`  → ${completionResult.message}`))
+
+        // Update in-memory PRD if it was updated
+        if (completionResult.prdUpdated && prdPath) {
+          state.prd = loadPrd(prdPath)
+        }
+
+        if (completionResult.errors.length > 0) {
+          for (const error of completionResult.errors) {
+            console.log(formatWarning(`  → ${error}`))
+          }
         }
       }
 

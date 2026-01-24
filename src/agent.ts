@@ -24,6 +24,7 @@ import {
   formatInterventionMessage,
   type InterventionResult,
 } from './keyboard.ts'
+import { getCompleteTaskToolDescription } from './tools/index.ts'
 
 /**
  * Find the Claude Code CLI executable path
@@ -318,33 +319,27 @@ ${progressSummary}
 ${backPressureInstructions}
 ${agentsMd ? `### Project Guidelines (AGENTS.md)\n${agentsMd}` : ''}
 
-## Git Commit Format
-
-Write detailed commit messages:
-
-\`\`\`bash
-git add -A && git commit -m "feat: Brief summary
-
-WHAT: Describe the specific changes
-- File/component changes
-- New features or fixes
-
-WHY: Explain key decisions
-- Why this approach
-
-NEXT: Follow-up work (optional)"
-\`\`\`
+${getCompleteTaskToolDescription()}
 
 ## Completion
 
-When done, report using this format:
+When you have finished implementing the task and all back pressure checks pass:
 
-## Changes Made
-[Brief summary - 2-3 sentences]
+1. **Use the CompleteTask tool** to commit, update progress, and mark the PRD task as done
+2. The tool will handle git commit, progress.txt update, and PRD marking atomically
 
-## Decisions
-- [Decision 1: why you chose this approach]
-- [Add more as needed, or "None"]
+Example CompleteTask call:
+\`\`\`json
+{
+  "taskDescription": "${task.description}",
+  "commitMessage": "feat: ${task.description}\\n\\nWHAT: Describe changes\\nWHY: Reasoning\\nNEXT: Follow-up",
+  "filesChanged": ["file1.ts"],
+  "decisions": ["Decision 1"],
+  "summary": "Brief summary"
+}
+\`\`\`
+
+After calling CompleteTask, report:
 
 ## Completed: ${task.description}
 `

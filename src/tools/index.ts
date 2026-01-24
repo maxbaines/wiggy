@@ -7,6 +7,15 @@
 // Re-export git tools (can be used directly if needed)
 export * as git from './git.ts'
 
+// Export CompleteTask tool for atomic task completion
+export {
+  executeCompleteTask,
+  getCompleteTaskToolDescription,
+  type CompleteTaskInput,
+  type CompleteTaskResult,
+  type CompleteTaskConfig,
+} from './complete-task.ts'
+
 // Note: The Claude Agent SDK provides built-in tools:
 //
 // File Tools:
