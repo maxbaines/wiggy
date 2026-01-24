@@ -12,6 +12,7 @@ import {
   loadPrd,
   getPrdSummary,
   isPrdComplete,
+  getIncompleteItems,
   markItemCompleteByDescription,
   savePrd,
 } from './prd.ts'
@@ -22,7 +23,12 @@ import {
   createProgressEntry,
   getLastIteration,
 } from './progress.ts'
-import { createSystemPrompt, runIteration } from './agent.ts'
+import {
+  createSystemPrompt,
+  createTaskImplementationPrompt,
+  selectNextTask,
+  runIteration,
+} from './agent.ts'
 import {
   log,
   formatBox,
@@ -199,10 +205,7 @@ export async function runRalph(args: RalphArgs): Promise<void> {
       break
     }
 
-    // Build the system prompt
-    const prdSummary = state.prd
-      ? getPrdSummary(state.prd)
-      : 'No PRD file. Work on improving the codebase.'
+    // Get progress summary and AGENTS.md
     const progressSummary = getProgressSummaryByMode(
       config.progressMode,
       config.workingDir,
@@ -222,11 +225,88 @@ export async function runRalph(args: RalphArgs): Promise<void> {
       pendingIntervention = null // Clear after including
     }
 
-    const systemPrompt = createSystemPrompt(
-      prdSummary,
-      enhancedProgressSummary,
-      agentsMd,
-    )
+    // TWO-PHASE EXECUTION
+    let systemPrompt: string
+    let selectedTaskDescription: string | undefined
+
+    if (state.prd) {
+      // PHASE 1: Task Selection
+      // Agent sees full PRD to select the best task
+      console.log(formatInfo('Phase 1: Selecting next task...'))
+      const prdSummary = getPrdSummary(state.prd)
+
+      const taskSelection = await selectNextTask(
+        config,
+        prdSummary,
+        enhancedProgressSummary,
+        agentsMd,
+        config.verbose,
+      )
+
+      if (taskSelection) {
+        console.log(
+          formatSuccess(
+            `Selected task #${taskSelection.taskId}: ${taskSelection.taskDescription}`,
+          ),
+        )
+        if (taskSelection.reasoning) {
+          console.log(formatInfo(`  Reasoning: ${taskSelection.reasoning}`))
+        }
+
+        // Find the task in PRD
+        const incompleteItems = getIncompleteItems(state.prd)
+        const selectedTask = incompleteItems.find(
+          (item) =>
+            item.id === taskSelection.taskId ||
+            item.description
+              .toLowerCase()
+              .includes(taskSelection.taskDescription.toLowerCase()) ||
+            taskSelection.taskDescription
+              .toLowerCase()
+              .includes(item.description.toLowerCase()),
+        )
+
+        if (selectedTask) {
+          // PHASE 2: Task Implementation
+          // Agent only sees the selected task
+          console.log(formatInfo('Phase 2: Implementing task...'))
+          systemPrompt = createTaskImplementationPrompt(
+            selectedTask,
+            enhancedProgressSummary,
+            agentsMd,
+          )
+          selectedTaskDescription = selectedTask.description
+        } else {
+          // Fallback: couldn't find task, use legacy full PRD mode
+          console.log(
+            formatWarning(
+              'Could not find selected task in PRD, using full PRD mode',
+            ),
+          )
+          systemPrompt = createSystemPrompt(
+            prdSummary,
+            enhancedProgressSummary,
+            agentsMd,
+          )
+        }
+      } else {
+        // Fallback: task selection failed, use legacy full PRD mode
+        console.log(formatWarning('Task selection failed, using full PRD mode'))
+        const prdSummary = getPrdSummary(state.prd)
+        systemPrompt = createSystemPrompt(
+          prdSummary,
+          enhancedProgressSummary,
+          agentsMd,
+        )
+      }
+    } else {
+      // No PRD - use legacy mode
+      systemPrompt = createSystemPrompt(
+        'No PRD file. Work on improving the codebase.',
+        enhancedProgressSummary,
+        agentsMd,
+      )
+    }
 
     // Run the iteration with intervention callback
     console.log(formatInfo('Running iteration...'))
@@ -236,6 +316,11 @@ export async function runRalph(args: RalphArgs): Promise<void> {
       config.verbose,
       async () => pendingIntervention,
     )
+
+    // Use selected task description if available
+    if (selectedTaskDescription && !result.taskDescription) {
+      result.taskDescription = selectedTaskDescription
+    }
 
     // Check if iteration was interrupted by user
     if (result.wasInterrupted) {

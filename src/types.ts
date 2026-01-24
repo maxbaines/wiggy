@@ -21,8 +21,16 @@ export interface RalphArgs {
   sandbox: boolean
   sandboxName?: string
   configFile?: string
+  analyze?: boolean
   help: boolean
   version: boolean
+}
+
+// Task Selection Result (Phase 1 output)
+export interface TaskSelectionResult {
+  taskId: string
+  taskDescription: string
+  reasoning: string
 }
 
 // PRD Types

@@ -10,7 +10,7 @@ import {
   type Options,
 } from '@anthropic-ai/claude-agent-sdk'
 import { existsSync } from 'fs'
-import type { RalphConfig } from './types.ts'
+import type { RalphConfig, PrdItem, TaskSelectionResult } from './types.ts'
 import { COMPLETION_MARKER } from './types.ts'
 import {
   formatToolCall,
@@ -100,7 +100,285 @@ function parseStructuredOutput(output: string): {
 }
 
 /**
- * Create the Ralph system prompt
+ * Parse task selection from agent response
+ */
+function parseTaskSelection(output: string): TaskSelectionResult | null {
+  // Look for structured output: SELECTED_TASK: <id>
+  const taskIdMatch = output.match(/SELECTED_TASK:\s*(\d+)/i)
+  const taskDescMatch = output.match(/TASK_DESCRIPTION:\s*(.+?)(?:\n|$)/i)
+  const reasoningMatch = output.match(
+    /REASONING:\s*([\s\S]*?)(?=\n(?:SELECTED_TASK|TASK_DESCRIPTION)|$)/i,
+  )
+
+  if (taskIdMatch) {
+    return {
+      taskId: taskIdMatch[1],
+      taskDescription: taskDescMatch?.[1]?.trim() || '',
+      reasoning: reasoningMatch?.[1]?.trim() || '',
+    }
+  }
+
+  return null
+}
+
+/**
+ * Create system prompt for task selection (Phase 1)
+ * Read-only analysis to select the next task
+ */
+export function createTaskSelectionPrompt(
+  prdSummary: string,
+  progressSummary: string,
+  agentsMd?: string,
+): string {
+  return `You are a task selection agent. Your ONLY job is to analyze the PRD and progress, then select the single most important task to work on next.
+
+## Your Process
+
+1. **Review the PRD** to understand all remaining tasks
+2. **Check progress** to see what has been completed
+3. **Analyze the codebase** if needed to understand dependencies
+4. **Select ONE task** based on priority:
+   - Architectural decisions and core abstractions (highest)
+   - Integration points between modules
+   - Unknown unknowns and spike work
+   - Standard features and implementation
+   - Polish, cleanup, and quick wins (lowest)
+
+## Available Tools (READ-ONLY)
+
+You can explore the codebase to make an informed decision:
+- **Read** - Read files to understand code structure
+- **Glob** - Find files by pattern
+- **Grep** - Search file contents
+- **Bash** - Run read-only commands (ls, cat, git log, git status, etc.)
+
+**DO NOT** make any changes to files. This is analysis only.
+
+## Current State
+
+### PRD Status
+${prdSummary}
+
+### Progress
+${progressSummary}
+${agentsMd ? `### Project Guidelines (AGENTS.md)\n${agentsMd}` : ''}
+
+## Output Format
+
+After your analysis, output your selection in this EXACT format:
+
+REASONING: [1-3 sentences explaining why this task should be done next]
+SELECTED_TASK: [task ID number from PRD]
+TASK_DESCRIPTION: [exact task description from PRD]
+
+Example:
+REASONING: The authentication module is a core dependency for all other features. Without it, we cannot implement user-specific functionality.
+SELECTED_TASK: 3
+TASK_DESCRIPTION: Implement user authentication with JWT tokens
+`
+}
+
+/**
+ * Select the next task to work on (Phase 1)
+ * Uses read-only tools to analyze codebase and select best task
+ */
+export async function selectNextTask(
+  config: RalphConfig,
+  prdSummary: string,
+  progressSummary: string,
+  agentsMd?: string,
+  verbose: boolean = false,
+): Promise<TaskSelectionResult | null> {
+  try {
+    const claudeCodePath = findClaudeCodePath()
+    if (!claudeCodePath) {
+      console.error('Claude Code CLI not found')
+      return null
+    }
+
+    const systemPrompt = createTaskSelectionPrompt(
+      prdSummary,
+      progressSummary,
+      agentsMd,
+    )
+
+    const options: Options = {
+      cwd: config.workingDir,
+      model: config.model,
+      maxTurns: 20, // Limited turns for task selection
+      pathToClaudeCodeExecutable: claudeCodePath,
+      // Read-only tools for analysis
+      tools: ['Read', 'Glob', 'Grep', 'Bash'],
+      systemPrompt: {
+        type: 'preset',
+        preset: 'claude_code',
+        append: systemPrompt,
+      },
+      // Only allow read-only tools
+      allowedTools: ['Read', 'Glob', 'Grep', 'Bash'],
+      permissionMode: 'default', // More restrictive - no auto-approve writes
+      hooks: createHooks(verbose),
+    }
+
+    const prompt =
+      'Analyze the PRD and codebase, then select the most important task to work on next. Output your selection in the required format.'
+
+    let fullOutput = ''
+
+    for await (const message of query({ prompt, options })) {
+      if (message.type === 'assistant') {
+        const assistantMsg = message as SDKAssistantMessage
+        for (const block of assistantMsg.message.content) {
+          if (block.type === 'text') {
+            fullOutput += block.text + '\n'
+            if (verbose) {
+              const formatted = formatThought(block.text)
+              if (formatted) {
+                console.log(formatted)
+              }
+            }
+          }
+          if (block.type === 'tool_use' && verbose) {
+            console.log(
+              formatToolCall(
+                block.name,
+                block.input as Record<string, unknown>,
+              ),
+            )
+          }
+        }
+      }
+
+      if (message.type === 'result') {
+        const resultMsg = message as SDKResultMessage
+        if (verbose && resultMsg.subtype === 'success') {
+          console.log(
+            formatInfo(
+              `Task selection completed in ${resultMsg.num_turns} turns`,
+            ),
+          )
+        }
+      }
+    }
+
+    return parseTaskSelection(fullOutput)
+  } catch (error) {
+    console.error(
+      'Error selecting task:',
+      error instanceof Error ? error.message : error,
+    )
+    return null
+  }
+}
+
+/**
+ * Create system prompt for task implementation (Phase 2)
+ * Only sees the selected task, not the full PRD
+ */
+export function createTaskImplementationPrompt(
+  task: PrdItem,
+  progressSummary: string,
+  agentsMd?: string,
+): string {
+  // Extract back pressure section from AGENTS.md if present
+  let backPressureInstructions = ''
+  if (agentsMd) {
+    const backPressureMatch = agentsMd.match(
+      /##\s*Back\s*pressure[^\n]*\n([\s\S]*?)(?=\n##\s|\n#\s|$)/i,
+    )
+    if (backPressureMatch) {
+      backPressureInstructions = `
+### Back Pressure Commands (from AGENTS.md)
+Run these checks before committing:
+${backPressureMatch[1].trim()}
+
+Use the Bash tool to run these checks.
+`
+    }
+  }
+
+  const taskSteps =
+    task.steps.length > 0
+      ? `\n\nSteps:\n${task.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
+      : ''
+
+  return `You are Ralph, an autonomous AI coding agent. You have ONE task to complete.
+
+## YOUR TASK
+
+**${task.description}**${taskSteps}
+
+Priority: ${task.priority}
+
+## Your Process
+
+1. **Implement the task** with small, focused changes
+2. **Run ALL back pressure checks** before committing
+3. **Make a git commit** with a detailed message
+
+## Available Tools
+
+### File Tools
+- **Read** - Read any file in the working directory
+- **Write** - Create new files
+- **Edit** - Make precise edits to existing files
+- **Glob** - Find files by pattern
+- **Grep** - Search file contents
+
+### Shell Tools
+- **Bash** - Run terminal commands, scripts, git operations
+
+### Web Tools
+- **WebSearch** - Search the web for information
+- **WebFetch** - Fetch web page content
+
+## Rules
+
+- Focus ONLY on the task above - do not work on anything else
+- Keep changes small and focused
+- Run back pressure checks after changes
+- **NEVER commit with failing checks**
+
+## Progress Context
+${progressSummary}
+${backPressureInstructions}
+${agentsMd ? `### Project Guidelines (AGENTS.md)\n${agentsMd}` : ''}
+
+## Git Commit Format
+
+Write detailed commit messages:
+
+\`\`\`bash
+git add -A && git commit -m "feat: Brief summary
+
+WHAT: Describe the specific changes
+- File/component changes
+- New features or fixes
+
+WHY: Explain key decisions
+- Why this approach
+
+NEXT: Follow-up work (optional)"
+\`\`\`
+
+## Completion
+
+When done, report using this format:
+
+## Changes Made
+[Brief summary - 2-3 sentences]
+
+## Decisions
+- [Decision 1: why you chose this approach]
+- [Add more as needed, or "None"]
+
+## Completed: ${task.description}
+`
+}
+
+/**
+ * Create the Ralph system prompt (legacy - full PRD visibility)
+ * @deprecated Use createTaskImplementationPrompt for focused task execution
  */
 export function createSystemPrompt(
   prdSummary: string,

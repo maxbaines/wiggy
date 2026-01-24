@@ -79,6 +79,10 @@ function parseArgs(args: string[]): RalphArgs {
         result.sandbox = false
         break
 
+      case '--analyze':
+        result.analyze = true
+        break
+
       case '-c':
       case '--config':
         result.configFile = args[++i]
