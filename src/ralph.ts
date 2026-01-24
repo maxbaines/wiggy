@@ -389,43 +389,44 @@ NEXT: Review this commit and ensure proper commit messages in future iterations`
 
       // Use CompleteTask tool for atomic completion (progress + PRD marking)
       // This ensures all completion actions happen together
-      if (result.taskDescription) {
-        const completeTaskConfig: CompleteTaskConfig = {
-          workingDir: config.workingDir,
-          prdPath: prdPath || undefined,
-          progressPath:
-            config.progressMode === 'file' ? progressPath : undefined,
-          progressMode: config.progressMode,
-          iteration: state.iteration,
-        }
+      // Prioritize selectedTaskDescription (from Phase 1) over parsed result
+      const taskDesc =
+        selectedTaskDescription || result.taskDescription || 'Task completed'
 
-        const completionResult = await executeCompleteTask(
-          {
-            taskDescription: result.taskDescription,
-            commitMessage: `chore: Complete task - ${result.taskDescription}
+      const completeTaskConfig: CompleteTaskConfig = {
+        workingDir: config.workingDir,
+        prdPath: prdPath || undefined,
+        progressPath: config.progressMode === 'file' ? progressPath : undefined,
+        progressMode: config.progressMode,
+        iteration: state.iteration,
+      }
+
+      const completionResult = await executeCompleteTask(
+        {
+          taskDescription: taskDesc,
+          commitMessage: `chore: Complete task - ${taskDesc}
 
 WHAT: Task completed by Ralph iteration ${state.iteration}
 ${result.filesChanged?.length ? `- Files: ${result.filesChanged.join(', ')}` : ''}
 
 WHY: Automated task completion via CompleteTask tool`,
-            filesChanged: result.filesChanged,
-            decisions: result.decisions,
-            summary: result.summary,
-          },
-          completeTaskConfig,
-        )
+          filesChanged: result.filesChanged,
+          decisions: result.decisions,
+          summary: result.summary,
+        },
+        completeTaskConfig,
+      )
 
-        console.log(formatInfo(`  → ${completionResult.message}`))
+      console.log(formatInfo(`  → ${completionResult.message}`))
 
-        // Update in-memory PRD if it was updated
-        if (completionResult.prdUpdated && prdPath) {
-          state.prd = loadPrd(prdPath)
-        }
+      // Update in-memory PRD if it was updated
+      if (completionResult.prdUpdated && prdPath) {
+        state.prd = loadPrd(prdPath)
+      }
 
-        if (completionResult.errors.length > 0) {
-          for (const error of completionResult.errors) {
-            console.log(formatWarning(`  → ${error}`))
-          }
+      if (completionResult.errors.length > 0) {
+        for (const error of completionResult.errors) {
+          console.log(formatWarning(`  → ${error}`))
         }
       }
 
