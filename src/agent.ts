@@ -101,12 +101,13 @@ function parseStructuredOutput(output: string): {
 
 /**
  * Parse task selection from agent response
+ * Supports multiple formats for robustness
  */
 function parseTaskSelection(output: string): TaskSelectionResult | null {
-  // Look for structured output: SELECTED_TASK: <id>
-  const taskIdMatch = output.match(/SELECTED_TASK:\s*(\d+)/i)
-  const taskDescMatch = output.match(/TASK_DESCRIPTION:\s*(.+?)(?:\n|$)/i)
-  const reasoningMatch = output.match(
+  // Try format 1: SELECTED_TASK: <id>
+  let taskIdMatch = output.match(/SELECTED_TASK:\s*(\d+)/i)
+  let taskDescMatch = output.match(/TASK_DESCRIPTION:\s*(.+?)(?:\n|$)/i)
+  let reasoningMatch = output.match(
     /REASONING:\s*([\s\S]*?)(?=\n(?:SELECTED_TASK|TASK_DESCRIPTION)|$)/i,
   )
 
@@ -118,75 +119,66 @@ function parseTaskSelection(output: string): TaskSelectionResult | null {
     }
   }
 
+  // Try format 2: "Task #N" or "Task N:"
+  taskIdMatch = output.match(/Task\s*#?(\d+)/i)
+  if (taskIdMatch) {
+    // Try to extract description after the task number
+    const afterTaskMatch = output.match(/Task\s*#?\d+[:\s]+(.+?)(?:\n|$)/i)
+    return {
+      taskId: taskIdMatch[1],
+      taskDescription: afterTaskMatch?.[1]?.trim() || '',
+      reasoning: '',
+    }
+  }
+
   return null
 }
 
 /**
  * Create system prompt for task selection (Phase 1)
- * Read-only analysis to select the next task
+ * Simple text-only analysis - NO TOOLS, just pick from the PRD list
  */
-export function createTaskSelectionPrompt(
-  prdSummary: string,
-  progressSummary: string,
-  agentsMd?: string,
-): string {
-  return `You are a task selection agent. Your ONLY job is to analyze the PRD and progress, then select the single most important task to work on next.
+export function createTaskSelectionPrompt(prdSummary: string): string {
+  return `You are a task selector. Pick the next task from the PRD list below.
 
-## Your Process
+## THE PRD IS KING
 
-1. **Review the PRD** to understand all remaining tasks
-2. **Check progress** to see what has been completed
-3. **Analyze the codebase** if needed to understand dependencies
-4. **Select ONE task** based on priority:
-   - Architectural decisions and core abstractions (highest)
-   - Integration points between modules
-   - Unknown unknowns and spike work
-   - Standard features and implementation
-   - Polish, cleanup, and quick wins (lowest)
+The PRD shows all tasks with their status:
+- [ ] = incomplete task (needs to be done)
+- [DONE] = completed task (skip these)
 
-## Available Tools (READ-ONLY)
-
-You can explore the codebase to make an informed decision:
-- **Read** - Read files to understand code structure
-- **Glob** - Find files by pattern
-- **Grep** - Search file contents
-- **Bash** - Run read-only commands (ls, cat, git log, git status, etc.)
-
-**DO NOT** make any changes to files. This is analysis only.
-
-## Current State
-
-### PRD Status
+## PRD Status
 ${prdSummary}
 
-### Progress
-${progressSummary}
-${agentsMd ? `### Project Guidelines (AGENTS.md)\n${agentsMd}` : ''}
+## Selection Rules
+
+1. Pick the FIRST incomplete [ ] task from the HIGH priority section
+2. If no high priority tasks remain, pick from MEDIUM priority
+3. If no medium priority tasks remain, pick from LOW priority
+4. NEVER pick a [DONE] task
 
 ## Output Format
 
-After your analysis, output your selection in this EXACT format:
+Respond with ONLY this format (no explanation needed):
 
-REASONING: [1-3 sentences explaining why this task should be done next]
-SELECTED_TASK: [task ID number from PRD]
-TASK_DESCRIPTION: [exact task description from PRD]
+SELECTED_TASK: [task ID number]
+TASK_DESCRIPTION: [exact task description]
 
 Example:
-REASONING: The authentication module is a core dependency for all other features. Without it, we cannot implement user-specific functionality.
-SELECTED_TASK: 3
-TASK_DESCRIPTION: Implement user authentication with JWT tokens
+SELECTED_TASK: 2
+TASK_DESCRIPTION: Add user authentication
 `
 }
 
 /**
  * Select the next task to work on (Phase 1)
- * Uses read-only tools to analyze codebase and select best task
+ * Simple text-only selection - no tools, just analyze the PRD
  */
 export async function selectNextTask(
   config: RalphConfig,
   prdSummary: string,
-  progressSummary: string,
-  agentsMd?: string,
+  _progressSummary: string,
+  _agentsMd?: string,
   verbose: boolean = false,
 ): Promise<TaskSelectionResult | null> {
   try {
@@ -196,32 +188,27 @@ export async function selectNextTask(
       return null
     }
 
-    const systemPrompt = createTaskSelectionPrompt(
-      prdSummary,
-      progressSummary,
-      agentsMd,
-    )
+    const systemPrompt = createTaskSelectionPrompt(prdSummary)
 
     const options: Options = {
       cwd: config.workingDir,
       model: config.model,
-      maxTurns: 20, // Limited turns for task selection
+      maxTurns: 1, // Single turn - just pick a task, no exploration
       pathToClaudeCodeExecutable: claudeCodePath,
-      // Read-only tools for analysis
-      tools: ['Read', 'Glob', 'Grep', 'Bash'],
+      // NO TOOLS - text only
+      tools: [],
       systemPrompt: {
         type: 'preset',
         preset: 'claude_code',
         append: systemPrompt,
       },
-      // Only allow read-only tools
-      allowedTools: ['Read', 'Glob', 'Grep', 'Bash'],
-      permissionMode: 'default', // More restrictive - no auto-approve writes
+      allowedTools: [],
+      permissionMode: 'default',
       hooks: createHooks(verbose),
     }
 
     const prompt =
-      'Analyze the PRD and codebase, then select the most important task to work on next. Output your selection in the required format.'
+      'Select the next task from the PRD. Output SELECTED_TASK and TASK_DESCRIPTION only.'
 
     let fullOutput = ''
 
@@ -232,19 +219,10 @@ export async function selectNextTask(
           if (block.type === 'text') {
             fullOutput += block.text + '\n'
             if (verbose) {
-              const formatted = formatThought(block.text)
-              if (formatted) {
-                console.log(formatted)
-              }
+              console.log(
+                formatInfo(`Task selector: ${block.text.substring(0, 100)}...`),
+              )
             }
-          }
-          if (block.type === 'tool_use' && verbose) {
-            console.log(
-              formatToolCall(
-                block.name,
-                block.input as Record<string, unknown>,
-              ),
-            )
           }
         }
       }
@@ -252,11 +230,7 @@ export async function selectNextTask(
       if (message.type === 'result') {
         const resultMsg = message as SDKResultMessage
         if (verbose && resultMsg.subtype === 'success') {
-          console.log(
-            formatInfo(
-              `Task selection completed in ${resultMsg.num_turns} turns`,
-            ),
-          )
+          console.log(formatInfo(`Task selection completed`))
         }
       }
     }
