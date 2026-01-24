@@ -193,15 +193,15 @@ export async function runRalph(args: RalphArgs): Promise<void> {
     }
 
     // Check if PRD is already complete
-    if (prd && isPrdComplete(prd)) {
+    if (state.prd && isPrdComplete(state.prd)) {
       console.log(formatSuccess('PRD is already complete!'))
       state.isComplete = true
       break
     }
 
     // Build the system prompt
-    const prdSummary = prd
-      ? getPrdSummary(prd)
+    const prdSummary = state.prd
+      ? getPrdSummary(state.prd)
       : 'No PRD file. Work on improving the codebase.'
     const progressSummary = getProgressSummaryByMode(
       config.progressMode,
@@ -320,9 +320,9 @@ NEXT: Review this commit and ensure proper commit messages in future iterations`
       }
 
       // Mark task as complete in PRD if we have one
-      if (prd && prdPath && result.taskDescription) {
+      if (state.prd && prdPath && result.taskDescription) {
         const updatedPrd = markItemCompleteByDescription(
-          prd,
+          state.prd,
           result.taskDescription,
         )
         if (updatedPrd) {

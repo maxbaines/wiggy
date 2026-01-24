@@ -20,7 +20,7 @@ import * as readline from 'readline'
 import { join, dirname } from 'path'
 import { spawnSync } from 'child_process'
 
-const VERSION = '1.0.0'
+const VERSION = '1.1.0'
 
 /**
  * Check if running inside a Docker container
