@@ -8,6 +8,8 @@ import type { RalphArgs } from './types.ts'
 import { runRalph } from './ralph.ts'
 import { generateProjectFiles } from './generate.ts'
 import { loadConfig } from './config.ts'
+import { savePrd } from './prd.ts'
+import type { PrdJson, PrdItem } from './types.ts'
 import {
   existsSync,
   mkdirSync,
@@ -1360,28 +1362,32 @@ async function handleDo(args: string[]): Promise<void> {
   console.log('')
 
   try {
-    const config = loadConfig(configFile)
-
-    console.log(`📝 Description: ${description}`)
-    console.log(`🔍 Analyzing codebase for context...`)
+    console.log(`📝 Task: ${description}`)
     console.log('')
 
-    // Generate PRD and AGENTS.md with codebase analysis
-    const { prd } = await generateProjectFiles(description, config, {
-      prdPath: 'do.md',
-      agentsPath: 'AGENTS.md',
-      analyzeCodebase: true,
-      verbose: true,
-    })
+    // Create a simple PRD with the exact text as a single item (no AI generation)
+    const prd: PrdJson = {
+      name: 'Task',
+      items: [
+        {
+          id: '1',
+          category: 'general',
+          description: description,
+          steps: [],
+          priority: 'high',
+          passes: false,
+          status: 'pending',
+        },
+      ],
+    }
 
-    console.log('')
-    console.log('📋 Generated PRD:')
-    console.log(`   Name: ${prd.name}`)
-    console.log(`   Tasks: ${prd.items.length}`)
+    // Save the PRD to do.md
+    savePrd('do.md', prd)
+    console.log('✅ Created do.md with task')
     console.log('')
 
-    // Calculate iterations: task count + 2 buffer, or use --max if provided
-    const iterations = maxIterations || prd.items.length + 2
+    // Calculate iterations: 1 task + 2 buffer, or use --max if provided
+    const iterations = maxIterations || 3
 
     console.log(`🚀 Starting execution (${iterations} iterations max)...`)
     console.log('')
