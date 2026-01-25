@@ -45,6 +45,8 @@ function normalizeItem(item: Partial<PrdItem>, index: number): PrdItem {
 
 /**
  * Parse Markdown format PRD
+ * Supports multi-line task descriptions - content after the checkbox line
+ * until the next task item or section header is included in the description
  */
 function parseMarkdownPrd(content: string): PrdJson {
   const items: PrdItem[] = []
@@ -53,19 +55,41 @@ function parseMarkdownPrd(content: string): PrdJson {
   let currentPriority: 'high' | 'medium' | 'low' = 'medium'
   let currentItem: Partial<PrdItem> | null = null
   let itemIndex = 0
+  let collectingDescription = false
 
   for (const line of lines) {
     // Detect priority sections
     if (line.toLowerCase().includes('high priority')) {
+      // Save previous item before changing section
+      if (currentItem) {
+        items.push(normalizeItem(currentItem, itemIndex++))
+        currentItem = null
+      }
       currentPriority = 'high'
+      collectingDescription = false
       continue
     }
     if (line.toLowerCase().includes('medium priority')) {
+      if (currentItem) {
+        items.push(normalizeItem(currentItem, itemIndex++))
+        currentItem = null
+      }
       currentPriority = 'medium'
+      collectingDescription = false
       continue
     }
     if (line.toLowerCase().includes('low priority')) {
+      if (currentItem) {
+        items.push(normalizeItem(currentItem, itemIndex++))
+        currentItem = null
+      }
       currentPriority = 'low'
+      collectingDescription = false
+      continue
+    }
+
+    // Skip other headers (# or ##)
+    if (line.match(/^#{1,2}\s/)) {
       continue
     }
 
@@ -98,14 +122,22 @@ function parseMarkdownPrd(content: string): PrdJson {
         passes: status === 'done',
         status,
       }
+      collectingDescription = true
       continue
     }
 
-    // Detect sub-items (steps)
+    // Detect sub-items (steps) - lines starting with whitespace + dash
     const stepMatch = line.match(/^\s+-\s+(.+)$/)
     if (stepMatch && currentItem) {
       currentItem.steps = currentItem.steps || []
       currentItem.steps.push(stepMatch[1].trim())
+      continue
+    }
+
+    // Collect additional description lines (non-empty lines that aren't steps or new tasks)
+    if (collectingDescription && currentItem && line.trim()) {
+      // Append to description with newline
+      currentItem.description = currentItem.description + '\n' + line
     }
   }
 
@@ -169,7 +201,15 @@ function prdToMarkdown(prd: PrdJson): string {
       } else if (item.status === 'working') {
         checkbox = '[WORKING]'
       }
-      lines.push(`- ${checkbox} ${item.description}`)
+
+      // Handle multi-line descriptions - first line goes with checkbox, rest on separate lines
+      const descriptionLines = item.description.split('\n')
+      lines.push(`- ${checkbox} ${descriptionLines[0]}`)
+
+      // Add remaining description lines (if multi-line)
+      for (let i = 1; i < descriptionLines.length; i++) {
+        lines.push(descriptionLines[i])
+      }
 
       for (const step of item.steps) {
         lines.push(`  - ${step}`)
