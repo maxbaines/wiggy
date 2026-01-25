@@ -569,7 +569,7 @@ export async function runIteration(
     }
 
     let prompt =
-      'Analyze the PRD and progress, then implement the highest-priority incomplete task. Remember to run feedback loops and commit your changes.'
+      'Implement the task described in your instructions. Focus only on this specific task, run back pressure checks when done, then use the CompleteTask tool to finish.'
 
     // Check for pending intervention to include in initial prompt
     const keyboard = getKeyboardListener()
