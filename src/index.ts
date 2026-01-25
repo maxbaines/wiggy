@@ -1388,22 +1388,9 @@ async function handleDo(args: string[]): Promise<void> {
     savePrd('do.md', prd)
     console.log('✅ Created do.md with task')
     console.log('')
-
-    // Calculate iterations: 1 task + 2 buffer, or use --max if provided
-    const iterations = maxIterations || 3
-
-    console.log(`🚀 Starting execution (${iterations} iterations max)...`)
+    console.log('📝 Edit do.md to add more details if needed, then run:')
+    console.log('   loop 3')
     console.log('')
-
-    // Run the loop
-    await runRalph({
-      iterations,
-      hitl,
-      sandbox: false,
-      help: false,
-      version: false,
-      configFile,
-    })
   } catch (error) {
     console.error('Error:', error instanceof Error ? error.message : error)
     process.exit(1)
