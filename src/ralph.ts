@@ -13,6 +13,8 @@ import {
   getPrdSummary,
   isPrdComplete,
   getIncompleteItems,
+  markItemWorking,
+  savePrd,
 } from './prd.ts'
 import {
   initProgressFile,
@@ -264,6 +266,13 @@ export async function runRalph(args: RalphArgs): Promise<void> {
         )
 
         if (selectedTask) {
+          // Mark task as [WORKING] in PRD before starting implementation
+          state.prd = markItemWorking(state.prd, selectedTask.id)
+          if (prdPath) {
+            savePrd(prdPath, state.prd)
+            console.log(formatInfo(`  → Marked task as [WORKING] in PRD`))
+          }
+
           // PHASE 2: Task Implementation
           // Agent only sees the selected task
           console.log(formatInfo('Phase 2: Implementing task...'))

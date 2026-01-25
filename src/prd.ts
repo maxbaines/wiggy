@@ -4,7 +4,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'fs'
-import type { PrdJson, PrdItem } from './types.ts'
+import type { PrdJson, PrdItem, PrdItemStatus } from './types.ts'
 
 /**
  * Load and parse a PRD file (Markdown format only)
@@ -19,16 +19,27 @@ export function loadPrd(filePath: string): PrdJson | null {
 }
 
 /**
+ * Derive status from passes boolean (for backwards compatibility)
+ */
+function deriveStatus(passes: boolean, status?: PrdItemStatus): PrdItemStatus {
+  if (status) return status
+  return passes ? 'done' : 'pending'
+}
+
+/**
  * Normalize a PRD item to ensure all fields exist
  */
 function normalizeItem(item: Partial<PrdItem>, index: number): PrdItem {
+  const passes = item.passes || false
+  const status = item.status || deriveStatus(passes)
   return {
     id: item.id || String(index + 1),
     category: item.category || 'general',
     description: item.description || '',
     steps: item.steps || [],
     priority: item.priority || 'medium',
-    passes: item.passes || false,
+    passes: status === 'done', // sync passes with status
+    status,
   }
 }
 
@@ -59,9 +70,9 @@ function parseMarkdownPrd(content: string): PrdJson {
     }
 
     // Detect task items (checkbox format)
-    // Support [ ], [x], [X], and [DONE]
+    // Support [ ], [x], [X], [DONE], and [WORKING]
     const taskMatch = line.match(
-      /^-\s*\[([ xXDONE]+)\]\s*\*?\*?(.+?)\*?\*?\s*$/
+      /^-\s*\[([ xXDONEWORKING]+)\]\s*\*?\*?(.+?)\*?\*?\s*$/,
     )
     if (taskMatch) {
       // Save previous item
@@ -69,9 +80,13 @@ function parseMarkdownPrd(content: string): PrdJson {
         items.push(normalizeItem(currentItem, itemIndex++))
       }
 
-      const checkboxContent = taskMatch[1].trim()
-      const isComplete =
-        checkboxContent.toLowerCase() === 'x' || checkboxContent === 'DONE'
+      const checkboxContent = taskMatch[1].trim().toUpperCase()
+      let status: PrdItemStatus = 'pending'
+      if (checkboxContent === 'X' || checkboxContent === 'DONE') {
+        status = 'done'
+      } else if (checkboxContent === 'WORKING') {
+        status = 'working'
+      }
       const description = taskMatch[2].trim()
 
       currentItem = {
@@ -80,7 +95,8 @@ function parseMarkdownPrd(content: string): PrdJson {
         description,
         steps: [],
         priority: currentPriority,
-        passes: isComplete,
+        passes: status === 'done',
+        status,
       }
       continue
     }
@@ -141,12 +157,18 @@ function prdToMarkdown(prd: PrdJson): string {
     if (items.length === 0) continue
 
     lines.push(
-      `### ${priority.charAt(0).toUpperCase() + priority.slice(1)} Priority`
+      `### ${priority.charAt(0).toUpperCase() + priority.slice(1)} Priority`,
     )
     lines.push('')
 
     for (const item of items) {
-      const checkbox = item.passes ? '[DONE]' : '[ ]'
+      // Use status for checkbox: [DONE], [WORKING], or [ ]
+      let checkbox = '[ ]'
+      if (item.status === 'done' || item.passes) {
+        checkbox = '[DONE]'
+      } else if (item.status === 'working') {
+        checkbox = '[WORKING]'
+      }
       lines.push(`- ${checkbox} **${item.description}**`)
 
       for (const step of item.steps) {
@@ -167,9 +189,44 @@ export function markItemComplete(prd: PrdJson, itemId: string): PrdJson {
   return {
     ...prd,
     items: prd.items.map((item) =>
-      item.id === itemId ? { ...item, passes: true } : item
+      item.id === itemId
+        ? { ...item, passes: true, status: 'done' as PrdItemStatus }
+        : item,
     ),
   }
+}
+
+/**
+ * Mark a PRD item as working by ID
+ */
+export function markItemWorking(prd: PrdJson, itemId: string): PrdJson {
+  return {
+    ...prd,
+    items: prd.items.map((item) =>
+      item.id === itemId
+        ? { ...item, status: 'working' as PrdItemStatus }
+        : item,
+    ),
+  }
+}
+
+/**
+ * Find the currently working item (if any)
+ */
+export function getWorkingItem(prd: PrdJson): PrdItem | undefined {
+  return prd.items.find((item) => item.status === 'working')
+}
+
+/**
+ * Mark the currently working item as complete
+ * Returns null if no working item found
+ */
+export function markWorkingItemComplete(prd: PrdJson): PrdJson | null {
+  const workingItem = getWorkingItem(prd)
+  if (!workingItem) {
+    return null
+  }
+  return markItemComplete(prd, workingItem.id)
 }
 
 /**
@@ -177,11 +234,11 @@ export function markItemComplete(prd: PrdJson, itemId: string): PrdJson {
  */
 export function markItemCompleteByDescription(
   prd: PrdJson,
-  description: string
+  description: string,
 ): PrdJson | null {
   // Try exact match first
   let matchedItem = prd.items.find(
-    (item) => !item.passes && item.description === description
+    (item) => !item.passes && item.description === description,
   )
 
   // If no exact match, try fuzzy match (contains or is contained by)
@@ -190,7 +247,7 @@ export function markItemCompleteByDescription(
       (item) =>
         !item.passes &&
         (item.description.toLowerCase().includes(description.toLowerCase()) ||
-          description.toLowerCase().includes(item.description.toLowerCase()))
+          description.toLowerCase().includes(item.description.toLowerCase())),
     )
   }
 

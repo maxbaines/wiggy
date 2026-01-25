@@ -34,13 +34,16 @@ export interface TaskSelectionResult {
 }
 
 // PRD Types
+export type PrdItemStatus = 'pending' | 'working' | 'done'
+
 export interface PrdItem {
   id: string
   category: string
   description: string
   steps: string[]
   priority: 'high' | 'medium' | 'low'
-  passes: boolean
+  passes: boolean // kept for backwards compatibility
+  status: PrdItemStatus // new: 'pending' | 'working' | 'done'
 }
 
 export interface PrdJson {

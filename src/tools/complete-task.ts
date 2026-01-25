@@ -4,7 +4,12 @@
  */
 
 import { stageAll, commit, getStatus } from './git.ts'
-import { loadPrd, savePrd, markItemCompleteByDescription } from '../prd.ts'
+import {
+  loadPrd,
+  savePrd,
+  markWorkingItemComplete,
+  markItemCompleteByDescription,
+} from '../prd.ts'
 import {
   appendProgress,
   createProgressEntry,
@@ -115,20 +120,25 @@ export async function executeCompleteTask(
   }
 
   // Step 4: Mark task as complete in PRD
+  // First try to find [WORKING] item (most reliable), then fall back to description match
   if (config.prdPath) {
     try {
       const prd = loadPrd(config.prdPath)
       if (prd) {
-        const updatedPrd = markItemCompleteByDescription(
-          prd,
-          input.taskDescription,
-        )
+        // Try to mark the [WORKING] item as complete first (most reliable)
+        let updatedPrd = markWorkingItemComplete(prd)
+
+        // If no [WORKING] item found, fall back to description matching
+        if (!updatedPrd) {
+          updatedPrd = markItemCompleteByDescription(prd, input.taskDescription)
+        }
+
         if (updatedPrd) {
           savePrd(config.prdPath, updatedPrd)
           prdUpdated = true
         } else {
           errors.push(
-            `Could not find matching PRD item for: "${input.taskDescription}"`,
+            `Could not find [WORKING] or matching PRD item for: "${input.taskDescription}"`,
           )
         }
       } else {
