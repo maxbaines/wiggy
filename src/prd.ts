@@ -1,10 +1,15 @@
 /**
  * PRD (Product Requirements Document) parsing for Ralph
- * Markdown format only
+ * Markdown format with Acceptance Criteria checkboxes
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'fs'
-import type { PrdJson, PrdItem, PrdItemStatus } from './types.ts'
+import type {
+  PrdJson,
+  PrdItem,
+  PrdItemStatus,
+  AcceptanceCriterion,
+} from './types.ts'
 
 /**
  * Load and parse a PRD file (Markdown format only)
@@ -19,34 +24,58 @@ export function loadPrd(filePath: string): PrdJson | null {
 }
 
 /**
- * Derive status from passes boolean (for backwards compatibility)
+ * Derive status from acceptance criteria completion
  */
-function deriveStatus(passes: boolean, status?: PrdItemStatus): PrdItemStatus {
-  if (status) return status
-  return passes ? 'done' : 'pending'
+function deriveStatusFromCriteria(
+  criteria: AcceptanceCriterion[],
+): PrdItemStatus {
+  if (criteria.length === 0) return 'pending'
+  const allDone = criteria.every((c) => c.done)
+  const anyDone = criteria.some((c) => c.done)
+  if (allDone) return 'done'
+  if (anyDone) return 'working'
+  return 'pending'
 }
 
 /**
  * Normalize a PRD item to ensure all fields exist
  */
 function normalizeItem(item: Partial<PrdItem>, index: number): PrdItem {
-  const passes = item.passes || false
-  const status = item.status || deriveStatus(passes)
+  const acceptanceCriteria = item.acceptanceCriteria || []
+  const status = item.status || deriveStatusFromCriteria(acceptanceCriteria)
+  const passes =
+    status === 'done' ||
+    (acceptanceCriteria.length > 0 && acceptanceCriteria.every((c) => c.done))
+
   return {
     id: item.id || String(index + 1),
     category: item.category || 'general',
     description: item.description || '',
-    steps: item.steps || [],
+    requirements: item.requirements || [],
+    acceptanceCriteria,
+    steps: item.steps || [], // backwards compatibility
     priority: item.priority || 'medium',
-    passes: status === 'done', // sync passes with status
+    passes,
     status,
   }
 }
 
 /**
  * Parse Markdown format PRD
- * Supports multi-line task descriptions - content after the checkbox line
- * until the next task item or section header is included in the description
+ * Supports the new format with Requirements and Acceptance Criteria sections
+ *
+ * Format:
+ * # Feature: Feature Name
+ *
+ * ## Requirements
+ * - Requirement 1
+ * - Requirement 2
+ *
+ * ## Acceptance Criteria
+ * - [ ] Criterion 1
+ * - [x] Criterion 2 (done)
+ *
+ * **Output when complete:** `<promise>DONE</promise>`
  */
 function parseMarkdownPrd(content: string): PrdJson {
   const items: PrdItem[] = []
@@ -55,18 +84,28 @@ function parseMarkdownPrd(content: string): PrdJson {
   let currentPriority: 'high' | 'medium' | 'low' = 'medium'
   let currentItem: Partial<PrdItem> | null = null
   let itemIndex = 0
-  let collectingDescription = false
+  let currentSection: 'none' | 'requirements' | 'acceptance' | 'steps' = 'none'
+  let prdName = 'PRD'
+  let prdDescription: string | undefined
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+
+    // Detect PRD title (# Title)
+    const titleMatch = line.match(/^#\s+(.+)$/)
+    if (titleMatch && !titleMatch[1].toLowerCase().startsWith('feature')) {
+      prdName = titleMatch[1].trim()
+      continue
+    }
+
     // Detect priority sections
     if (line.toLowerCase().includes('high priority')) {
-      // Save previous item before changing section
       if (currentItem) {
         items.push(normalizeItem(currentItem, itemIndex++))
         currentItem = null
       }
       currentPriority = 'high'
-      collectingDescription = false
+      currentSection = 'none'
       continue
     }
     if (line.toLowerCase().includes('medium priority')) {
@@ -75,7 +114,7 @@ function parseMarkdownPrd(content: string): PrdJson {
         currentItem = null
       }
       currentPriority = 'medium'
-      collectingDescription = false
+      currentSection = 'none'
       continue
     }
     if (line.toLowerCase().includes('low priority')) {
@@ -84,17 +123,98 @@ function parseMarkdownPrd(content: string): PrdJson {
         currentItem = null
       }
       currentPriority = 'low'
-      collectingDescription = false
+      currentSection = 'none'
       continue
     }
 
-    // Skip other headers (# or ##)
-    if (line.match(/^#{1,2}\s/)) {
+    // Detect Feature header (# Feature: Name or ## Feature: Name)
+    const featureMatch = line.match(/^#{1,2}\s+(?:Feature:\s*)?(.+)$/)
+    if (featureMatch && !line.toLowerCase().includes('priority')) {
+      // Check if this is a section header we should skip
+      const headerLower = featureMatch[1].toLowerCase()
+      if (
+        headerLower === 'requirements' ||
+        headerLower === 'acceptance criteria' ||
+        headerLower === 'tasks'
+      ) {
+        continue
+      }
+
+      // Save previous item
+      if (currentItem) {
+        items.push(normalizeItem(currentItem, itemIndex++))
+      }
+
+      currentItem = {
+        id: String(itemIndex + 1),
+        category: 'general',
+        description: featureMatch[1].trim().replace(/^Feature:\s*/i, ''),
+        requirements: [],
+        acceptanceCriteria: [],
+        steps: [],
+        priority: currentPriority,
+        passes: false,
+        status: 'pending',
+      }
+      currentSection = 'none'
       continue
     }
 
-    // Detect task items (checkbox format)
-    // Support [ ], [x], [X], [DONE], and [WORKING]
+    // Detect Requirements section
+    if (line.match(/^##\s*Requirements/i)) {
+      currentSection = 'requirements'
+      continue
+    }
+
+    // Detect Acceptance Criteria section
+    if (line.match(/^##\s*Acceptance\s*Criteria/i)) {
+      currentSection = 'acceptance'
+      continue
+    }
+
+    // Detect Steps section (backwards compatibility)
+    if (line.match(/^##\s*Steps/i)) {
+      currentSection = 'steps'
+      continue
+    }
+
+    // Parse content based on current section
+    if (currentItem) {
+      // Requirements: plain bullet points
+      if (currentSection === 'requirements') {
+        const reqMatch = line.match(/^[-*]\s+(.+)$/)
+        if (reqMatch) {
+          currentItem.requirements = currentItem.requirements || []
+          currentItem.requirements.push(reqMatch[1].trim())
+          continue
+        }
+      }
+
+      // Acceptance Criteria: checkbox items
+      if (currentSection === 'acceptance') {
+        const criteriaMatch = line.match(/^[-*]\s*\[([ xX])\]\s*(.+)$/)
+        if (criteriaMatch) {
+          currentItem.acceptanceCriteria = currentItem.acceptanceCriteria || []
+          currentItem.acceptanceCriteria.push({
+            description: criteriaMatch[2].trim(),
+            done: criteriaMatch[1].toLowerCase() === 'x',
+          })
+          continue
+        }
+      }
+
+      // Steps (backwards compatibility): plain bullet points
+      if (currentSection === 'steps') {
+        const stepMatch = line.match(/^[-*]\s+(.+)$/)
+        if (stepMatch) {
+          currentItem.steps = currentItem.steps || []
+          currentItem.steps.push(stepMatch[1].trim())
+          continue
+        }
+      }
+    }
+
+    // Legacy format: task items with checkbox (- [ ] Task description)
     const taskMatch = line.match(
       /^-\s*\[([ xX]|DONE|WORKING)\]\s*\*?\*?(.+?)\*?\*?\s*$/,
     )
@@ -117,27 +237,27 @@ function parseMarkdownPrd(content: string): PrdJson {
         id: String(itemIndex + 1),
         category: 'general',
         description,
+        requirements: [],
+        acceptanceCriteria: [],
         steps: [],
         priority: currentPriority,
         passes: status === 'done',
         status,
       }
-      collectingDescription = true
+      currentSection = 'none'
       continue
     }
 
-    // Detect sub-items (steps) - lines starting with whitespace + dash
+    // Legacy: sub-items (steps) - lines starting with whitespace + dash
     const stepMatch = line.match(/^\s+-\s+(.+)$/)
-    if (stepMatch && currentItem) {
-      currentItem.steps = currentItem.steps || []
-      currentItem.steps.push(stepMatch[1].trim())
+    if (stepMatch && currentItem && currentSection === 'none') {
+      // Convert legacy steps to acceptance criteria
+      currentItem.acceptanceCriteria = currentItem.acceptanceCriteria || []
+      currentItem.acceptanceCriteria.push({
+        description: stepMatch[1].trim(),
+        done: false,
+      })
       continue
-    }
-
-    // Collect additional description lines (non-empty lines that aren't steps or new tasks)
-    if (collectingDescription && currentItem && line.trim()) {
-      // Append to description with newline
-      currentItem.description = currentItem.description + '\n' + line
     }
   }
 
@@ -147,7 +267,8 @@ function parseMarkdownPrd(content: string): PrdJson {
   }
 
   return {
-    name: 'PRD',
+    name: prdName,
+    description: prdDescription,
     items,
   }
 }
@@ -161,6 +282,7 @@ export function savePrd(filePath: string, prd: PrdJson): void {
 
 /**
  * Convert PRD to Markdown format
+ * Uses the new format with Requirements and Acceptance Criteria
  */
 function prdToMarkdown(prd: PrdJson): string {
   const lines: string[] = []
@@ -175,9 +297,6 @@ function prdToMarkdown(prd: PrdJson): string {
     lines.push('')
   }
 
-  lines.push('## Tasks')
-  lines.push('')
-
   // Group by priority
   const byPriority = {
     high: prd.items.filter((i) => i.priority === 'high'),
@@ -189,32 +308,49 @@ function prdToMarkdown(prd: PrdJson): string {
     if (items.length === 0) continue
 
     lines.push(
-      `### ${priority.charAt(0).toUpperCase() + priority.slice(1)} Priority`,
+      `## ${priority.charAt(0).toUpperCase() + priority.slice(1)} Priority`,
     )
     lines.push('')
 
     for (const item of items) {
-      // Use status for checkbox: [DONE], [WORKING], or [ ]
-      let checkbox = '[ ]'
-      if (item.status === 'done' || item.passes) {
-        checkbox = '[DONE]'
-      } else if (item.status === 'working') {
-        checkbox = '[WORKING]'
+      // Feature header
+      lines.push(`### Feature: ${item.description}`)
+      lines.push('')
+
+      // Requirements section
+      if (item.requirements && item.requirements.length > 0) {
+        lines.push('#### Requirements')
+        for (const req of item.requirements) {
+          lines.push(`- ${req}`)
+        }
+        lines.push('')
       }
 
-      // Handle multi-line descriptions - first line goes with checkbox, rest on separate lines
-      const descriptionLines = item.description.split('\n')
-      lines.push(`- ${checkbox} ${descriptionLines[0]}`)
-
-      // Add remaining description lines (if multi-line)
-      for (let i = 1; i < descriptionLines.length; i++) {
-        lines.push(descriptionLines[i])
+      // Acceptance Criteria section
+      if (item.acceptanceCriteria && item.acceptanceCriteria.length > 0) {
+        lines.push('#### Acceptance Criteria')
+        for (const criterion of item.acceptanceCriteria) {
+          const checkbox = criterion.done ? '[x]' : '[ ]'
+          lines.push(`- ${checkbox} ${criterion.description}`)
+        }
+        lines.push('')
       }
 
-      for (const step of item.steps) {
-        lines.push(`  - ${step}`)
+      // Legacy steps (if no acceptance criteria but has steps)
+      if (
+        (!item.acceptanceCriteria || item.acceptanceCriteria.length === 0) &&
+        item.steps &&
+        item.steps.length > 0
+      ) {
+        lines.push('#### Acceptance Criteria')
+        for (const step of item.steps) {
+          lines.push(`- [ ] ${step}`)
+        }
+        lines.push('')
       }
 
+      // Completion marker instruction
+      lines.push('**Output when complete:** `<promise>DONE</promise>`')
       lines.push('')
     }
   }
@@ -230,9 +366,49 @@ export function markItemComplete(prd: PrdJson, itemId: string): PrdJson {
     ...prd,
     items: prd.items.map((item) =>
       item.id === itemId
-        ? { ...item, passes: true, status: 'done' as PrdItemStatus }
+        ? {
+            ...item,
+            passes: true,
+            status: 'done' as PrdItemStatus,
+            acceptanceCriteria: item.acceptanceCriteria.map((c) => ({
+              ...c,
+              done: true,
+            })),
+          }
         : item,
     ),
+  }
+}
+
+/**
+ * Mark a specific acceptance criterion as complete
+ */
+export function markCriterionComplete(
+  prd: PrdJson,
+  itemId: string,
+  criterionDescription: string,
+): PrdJson {
+  return {
+    ...prd,
+    items: prd.items.map((item) => {
+      if (item.id !== itemId) return item
+
+      const updatedCriteria = item.acceptanceCriteria.map((c) =>
+        c.description.toLowerCase().includes(criterionDescription.toLowerCase())
+          ? { ...c, done: true }
+          : c,
+      )
+
+      const allDone = updatedCriteria.every((c) => c.done)
+      const anyDone = updatedCriteria.some((c) => c.done)
+
+      return {
+        ...item,
+        acceptanceCriteria: updatedCriteria,
+        passes: allDone,
+        status: allDone ? 'done' : anyDone ? 'working' : item.status,
+      }
+    }),
   }
 }
 
@@ -330,6 +506,7 @@ export function isPrdComplete(prd: PrdJson): boolean {
 
 /**
  * Get PRD summary for prompt
+ * Shows acceptance criteria status for each feature
  */
 export function getPrdSummary(prd: PrdJson): string {
   const total = prd.items.length
@@ -337,18 +514,41 @@ export function getPrdSummary(prd: PrdJson): string {
   const incomplete = getIncompleteItems(prd)
 
   let summary = `PRD: ${prd.name}\n`
-  summary += `Progress: ${complete}/${total} tasks complete\n\n`
+  summary += `Progress: ${complete}/${total} features complete\n\n`
 
   if (incomplete.length > 0) {
-    summary += 'Remaining tasks:\n'
+    summary += 'Remaining features:\n'
     for (const item of incomplete) {
-      summary += `- [${item.priority}] ${item.description}\n`
-      for (const step of item.steps) {
-        summary += `  - ${step}\n`
+      const criteriaTotal = item.acceptanceCriteria.length
+      const criteriaDone = item.acceptanceCriteria.filter((c) => c.done).length
+
+      summary += `\n### [${item.priority}] ${item.description}\n`
+
+      if (item.requirements.length > 0) {
+        summary += 'Requirements:\n'
+        for (const req of item.requirements) {
+          summary += `  - ${req}\n`
+        }
+      }
+
+      if (criteriaTotal > 0) {
+        summary += `Acceptance Criteria (${criteriaDone}/${criteriaTotal} done):\n`
+        for (const criterion of item.acceptanceCriteria) {
+          const checkbox = criterion.done ? '[x]' : '[ ]'
+          summary += `  - ${checkbox} ${criterion.description}\n`
+        }
+      }
+
+      // Legacy steps support
+      if (criteriaTotal === 0 && item.steps.length > 0) {
+        summary += 'Steps:\n'
+        for (const step of item.steps) {
+          summary += `  - [ ] ${step}\n`
+        }
       }
     }
   } else {
-    summary += 'All tasks complete!'
+    summary += 'All features complete!'
   }
 
   return summary

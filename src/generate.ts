@@ -37,53 +37,71 @@ Generate a Markdown PRD with this structure:
 
 Brief description of the project
 
-## Tasks
+## High Priority
 
-### High Priority
+### Feature: Feature Name
 
-- [ ] **Clear, actionable task description**
-  - Specific acceptance criteria 1
-  - Specific acceptance criteria 2
+#### Requirements
+- What needs to be built (description)
+- Another requirement
 
-### Medium Priority
+#### Acceptance Criteria
+- [ ] Clear, testable criterion that tells the agent when this is "done"
+- [ ] Another specific, verifiable criterion
+- [ ] Tests pass
 
-- [ ] **Another task description**
-  - Acceptance criteria
+**Output when complete:** \`<promise>DONE</promise>\`
 
-### Low Priority
+## Medium Priority
 
-- [ ] **Lower priority task**
-  - Acceptance criteria
+### Feature: Another Feature
 
-## Guidelines (from Matt Pocock's Ralph Wiggum methodology)
+#### Requirements
+- Description of what to build
+
+#### Acceptance Criteria
+- [ ] User can do X
+- [ ] System handles Y correctly
+- [ ] Tests pass
+
+**Output when complete:** \`<promise>DONE</promise>\`
+
+## Low Priority
+
+### Feature: Polish Feature
+
+#### Requirements
+- What to improve
+
+#### Acceptance Criteria
+- [ ] Specific improvement is visible
+- [ ] Tests pass
+
+**Output when complete:** \`<promise>DONE</promise>\`
+
+## Guidelines
 
 1. **Prioritize by type:**
    - HIGH: Architecture, core abstractions, integration points
    - MEDIUM: Standard features, implementation
    - LOW: Polish, documentation, cleanup
 
-2. **Be specific about scope:**
-   - Define exactly what "done" looks like
-   - Include acceptance criteria (steps) for each task
-   - Don't leave room for shortcuts
-
-3. **Keep tasks atomic:**
-   - Each task should be completable in one iteration
-   - If a task is too large, break it into subtasks
-   - One logical change per task
-
-4. **Categories:**
-   - setup: Project initialization, dependencies, configuration
-   - architecture: Core abstractions, patterns, structure
-   - functional: Features, business logic
-   - testing: Tests, coverage
-   - documentation: README, comments, docs
-   - polish: Cleanup, refactoring, optimization
-
-5. **Acceptance criteria (steps):**
+2. **Acceptance Criteria are KING:**
+   - Each criterion is a checkbox that tells the agent exactly what "done" looks like
+   - Good: "User can log in with Google and session persists"
+   - Bad: "Auth works correctly"
    - Be specific and verifiable
    - Include edge cases
-   - Think about what could go wrong
+   - Always include "Tests pass" as a criterion
+
+3. **Keep features atomic:**
+   - Each feature should be completable in one iteration
+   - If a feature is too large, break it into multiple features
+   - One logical change per feature
+
+4. **Requirements vs Acceptance Criteria:**
+   - Requirements: WHAT needs to be built (description)
+   - Acceptance Criteria: HOW we know it's done (testable checkboxes)
 
 ## Output
 
@@ -265,6 +283,8 @@ function normalizePrd(prd: Partial<PrdJson>): PrdJson {
         id: item.id || String(index + 1),
         category: item.category || 'functional',
         description: item.description || '',
+        requirements: item.requirements || [],
+        acceptanceCriteria: item.acceptanceCriteria || [],
         steps: item.steps || [],
         priority: item.priority || 'medium',
         passes,

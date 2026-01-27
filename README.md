@@ -122,17 +122,54 @@ CLAUDE_MODEL=claude-sonnet-4-20250514  # Optional, defaults to sonnet
 
 ## PRD Format
 
-Create a `PRD.md` file in your project root:
+Create a `PRD.md` file in your project root. The key to success: **Each feature needs clear, testable acceptance criteria.** This is what tells Ralph when a task is truly "done."
 
 ```markdown
 # Project Name
 
-## Tasks
+## High Priority
 
-- [ ] Task 1 description
-- [ ] Task 2 description
-- [x] Completed task (will be skipped)
+### Feature: User Authentication
+
+#### Requirements
+
+- OAuth login with Google
+- Session management
+- Logout functionality
+
+#### Acceptance Criteria
+
+- [ ] User can log in with Google
+- [ ] Session persists across page reloads
+- [ ] User can log out
+- [ ] Tests pass
+
+**Output when complete:** `<promise>DONE</promise>`
+
+## Medium Priority
+
+### Feature: Dashboard
+
+#### Requirements
+
+- Display user stats
+- Show recent activity
+
+#### Acceptance Criteria
+
+- [ ] Dashboard loads within 2 seconds
+- [ ] Stats are accurate
+- [ ] Tests pass
+
+**Output when complete:** `<promise>DONE</promise>`
 ```
+
+### Good vs Bad Acceptance Criteria
+
+**Good criteria:** "User can log in with Google and session persists across page reloads"
+**Bad criteria:** "Auth works correctly"
+
+The more specific your acceptance criteria, the better Ralph performs.
 
 ## AGENTS.md
 

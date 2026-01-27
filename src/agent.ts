@@ -245,8 +245,22 @@ Use the Bash tool to run these checks.
     }
   }
 
+  // Build requirements section
+  const requirementsSection =
+    task.requirements && task.requirements.length > 0
+      ? `\n\n### Requirements\n${task.requirements.map((r) => `- ${r}`).join('\n')}`
+      : ''
+
+  // Build acceptance criteria section (the checkboxes that define "done")
+  const acceptanceCriteriaSection =
+    task.acceptanceCriteria && task.acceptanceCriteria.length > 0
+      ? `\n\n### Acceptance Criteria\n${task.acceptanceCriteria.map((c) => `- [${c.done ? 'x' : ' '}] ${c.description}`).join('\n')}`
+      : ''
+
+  // Legacy steps support
   const taskSteps =
-    task.steps.length > 0
+    task.steps.length > 0 &&
+    (!task.acceptanceCriteria || task.acceptanceCriteria.length === 0)
       ? `\n\nSteps:\n${task.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
       : ''
 
@@ -254,7 +268,7 @@ Use the Bash tool to run these checks.
 
 ## YOUR TASK
 
-**${task.description}**${taskSteps}
+**${task.description}**${requirementsSection}${acceptanceCriteriaSection}${taskSteps}
 
 Priority: ${task.priority}
 

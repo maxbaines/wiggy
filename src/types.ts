@@ -36,14 +36,22 @@ export interface TaskSelectionResult {
 // PRD Types
 export type PrdItemStatus = 'pending' | 'working' | 'done'
 
+// Acceptance Criterion - individual testable item with its own checkbox
+export interface AcceptanceCriterion {
+  description: string
+  done: boolean
+}
+
 export interface PrdItem {
   id: string
   category: string
-  description: string
-  steps: string[]
+  description: string // Feature/task title
+  requirements: string[] // What needs to be built (description bullets)
+  acceptanceCriteria: AcceptanceCriterion[] // Testable checkboxes
+  steps: string[] // kept for backwards compatibility
   priority: 'high' | 'medium' | 'low'
-  passes: boolean // kept for backwards compatibility
-  status: PrdItemStatus // new: 'pending' | 'working' | 'done'
+  passes: boolean // kept for backwards compatibility - true when ALL acceptance criteria done
+  status: PrdItemStatus // 'pending' | 'working' | 'done'
 }
 
 export interface PrdJson {
@@ -111,4 +119,4 @@ export interface LoopState {
 }
 
 // Completion Detection
-export const COMPLETION_MARKER = '<promise>COMPLETE</promise>'
+export const COMPLETION_MARKER = '<promise>DONE</promise>'

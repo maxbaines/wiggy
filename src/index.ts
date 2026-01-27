@@ -1233,6 +1233,8 @@ async function handleDo(args: string[]): Promise<void> {
           id: '1',
           category: 'general',
           description: description,
+          requirements: [],
+          acceptanceCriteria: [],
           steps: [],
           priority: 'high',
           passes: false,
