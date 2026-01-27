@@ -96,7 +96,7 @@ function parseMarkdownPrd(content: string): PrdJson {
     // Detect task items (checkbox format)
     // Support [ ], [x], [X], [DONE], and [WORKING]
     const taskMatch = line.match(
-      /^-\s*\[([ xXDONEWORKING]+)\]\s*\*?\*?(.+?)\*?\*?\s*$/,
+      /^-\s*\[([ xX]|DONE|WORKING)\]\s*\*?\*?(.+?)\*?\*?\s*$/,
     )
     if (taskMatch) {
       // Save previous item

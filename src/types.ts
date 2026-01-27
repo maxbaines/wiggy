@@ -97,7 +97,6 @@ export interface GitResult extends ToolResult {
 export interface InterventionMessage {
   message: string
   timestamp: Date
-  injected: boolean
 }
 
 // Loop State

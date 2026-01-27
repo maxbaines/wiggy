@@ -9,8 +9,8 @@ import {
   type SDKAssistantMessage,
   type Options,
 } from '@anthropic-ai/claude-agent-sdk'
-import { existsSync } from 'fs'
 import type { RalphConfig, PrdItem, TaskSelectionResult } from './types.ts'
+import { findClaudeCodePath } from './utils.ts'
 import { COMPLETION_MARKER } from './types.ts'
 import {
   formatToolCall,
@@ -25,33 +25,6 @@ import {
   type InterventionResult,
 } from './keyboard.ts'
 import { getCompleteTaskToolDescription } from './tools/index.ts'
-
-/**
- * Find the Claude Code CLI executable path
- * Checks common installation locations and environment variable
- */
-function findClaudeCodePath(): string | undefined {
-  const possiblePaths = [
-    // Check environment variable first (allows custom path)
-    process.env.CLAUDE_CODE_PATH,
-    // Ubuntu/Linux default install location (most common)
-    `${process.env.HOME}/.local/bin/claude`,
-    '/root/.local/bin/claude', // Docker root user
-    // Other common locations
-    '/usr/local/bin/claude',
-    `${process.env.HOME}/.claude/local/bin/claude`,
-    '/root/.claude/local/bin/claude',
-    '/opt/homebrew/bin/claude', // macOS Homebrew
-  ].filter(Boolean) as string[] // Remove undefined entries
-
-  for (const path of possiblePaths) {
-    if (existsSync(path)) {
-      return path
-    }
-  }
-
-  return undefined
-}
 
 /**
  * Parse structured output from agent response
@@ -353,7 +326,7 @@ After calling CompleteTask, you MUST output this format:
 
 /**
  * Create the Ralph system prompt (legacy - full PRD visibility)
- * @deprecated Use createTaskImplementationPrompt for focused task execution
+ * Used as fallback when task selection fails or no PRD is available
  */
 export function createSystemPrompt(
   prdSummary: string,
@@ -505,7 +478,6 @@ export async function runIteration(
   config: RalphConfig,
   systemPrompt: string,
   verbose: boolean = false,
-  interventionCallback?: () => Promise<InterventionResult | null>,
 ): Promise<{
   success: boolean
   isComplete: boolean

@@ -29,7 +29,6 @@ import {
   runIteration,
 } from './agent.ts'
 import {
-  log,
   formatBox,
   formatIterationHeader,
   formatSuccess,
@@ -38,6 +37,7 @@ import {
   formatInfo,
 } from './output.ts'
 import { getKeyboardListener, type InterventionResult } from './keyboard.ts'
+import { sendNotification } from './utils.ts'
 
 /**
  * Print the Ralph banner
@@ -93,21 +93,6 @@ function autoCommitChanges(workingDir: string, message: string): boolean {
     return true
   } catch {
     return false
-  }
-}
-
-/**
- * Send notification (macOS)
- */
-function sendNotification(title: string, message: string): void {
-  try {
-    const { execSync } = require('child_process')
-    execSync(
-      `osascript -e 'display notification "${message}" with title "${title}"'`,
-      { stdio: 'ignore' },
-    )
-  } catch {
-    // Ignore notification errors
   }
 }
 
@@ -314,14 +299,9 @@ export async function runRalph(args: RalphArgs): Promise<void> {
       )
     }
 
-    // Run the iteration with intervention callback
+    // Run the iteration
     console.log(formatInfo('Running iteration...'))
-    const result = await runIteration(
-      config,
-      systemPrompt,
-      config.verbose,
-      async () => pendingIntervention,
-    )
+    const result = await runIteration(config, systemPrompt, config.verbose)
 
     // Use selected task description if available
     if (selectedTaskDescription && !result.taskDescription) {

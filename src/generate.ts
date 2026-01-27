@@ -19,33 +19,7 @@ import {
 import { join } from 'path'
 import type { PrdJson, RalphConfig } from './types.ts'
 import { savePrd } from './prd.ts'
-
-/**
- * Find the Claude Code CLI executable path
- * Checks common installation locations and environment variable
- */
-function findClaudeCodePath(): string | undefined {
-  const possiblePaths = [
-    // Check environment variable first (allows custom path)
-    process.env.CLAUDE_CODE_PATH,
-    // Ubuntu/Linux default install location (most common)
-    `${process.env.HOME}/.local/bin/claude`,
-    '/root/.local/bin/claude', // Docker root user
-    // Other common locations
-    '/usr/local/bin/claude',
-    `${process.env.HOME}/.claude/local/bin/claude`,
-    '/root/.claude/local/bin/claude',
-    '/opt/homebrew/bin/claude', // macOS Homebrew
-  ].filter(Boolean) as string[] // Remove undefined entries
-
-  for (const path of possiblePaths) {
-    if (existsSync(path)) {
-      return path
-    }
-  }
-
-  return undefined
-}
+import { findClaudeCodePath } from './utils.ts'
 
 /**
  * System prompt for PRD generation
@@ -284,14 +258,19 @@ function normalizePrd(prd: Partial<PrdJson>): PrdJson {
   return {
     name: prd.name || 'PRD',
     description: prd.description,
-    items: (prd.items || []).map((item, index) => ({
-      id: item.id || String(index + 1),
-      category: item.category || 'functional',
-      description: item.description || '',
-      steps: item.steps || [],
-      priority: item.priority || 'medium',
-      passes: item.passes || false,
-    })),
+    items: (prd.items || []).map((item, index) => {
+      const passes = item.passes || false
+      const status = item.status || (passes ? 'done' : 'pending')
+      return {
+        id: item.id || String(index + 1),
+        category: item.category || 'functional',
+        description: item.description || '',
+        steps: item.steps || [],
+        priority: item.priority || 'medium',
+        passes,
+        status,
+      }
+    }),
   }
 }
 

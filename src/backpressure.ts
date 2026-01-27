@@ -6,8 +6,8 @@
 
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
-import { spawn } from 'child_process'
 import type { CommandResult } from './types.ts'
+import { executeCommand } from './utils.ts'
 
 /**
  * A single back pressure check
@@ -31,81 +31,6 @@ export interface BackPressureResults {
   }[]
   allPassed: boolean
   summary: string
-}
-
-/**
- * Execute a shell command (internal helper)
- */
-async function executeCommand(
-  command: string,
-  workingDir: string,
-  timeout: number = 60000,
-): Promise<CommandResult> {
-  return new Promise((resolve) => {
-    const startTime = Date.now()
-
-    // Use shell to execute the command
-    const child = spawn(command, {
-      shell: true,
-      cwd: workingDir,
-      env: process.env,
-    })
-
-    let stdout = ''
-    let stderr = ''
-
-    child.stdout?.on('data', (data) => {
-      stdout += data.toString()
-    })
-
-    child.stderr?.on('data', (data) => {
-      stderr += data.toString()
-    })
-
-    // Set timeout
-    const timeoutId = setTimeout(() => {
-      child.kill('SIGTERM')
-      resolve({
-        success: false,
-        error: `Command timed out after ${timeout}ms`,
-        stdout,
-        stderr,
-        exitCode: -1,
-      })
-    }, timeout)
-
-    child.on('close', (code) => {
-      clearTimeout(timeoutId)
-      const duration = Date.now() - startTime
-
-      if (code === 0) {
-        resolve({
-          success: true,
-          output: `Command completed in ${duration}ms`,
-          stdout: stdout.trim(),
-          stderr: stderr.trim(),
-          exitCode: code,
-        })
-      } else {
-        resolve({
-          success: false,
-          error: `Command exited with code ${code}`,
-          stdout: stdout.trim(),
-          stderr: stderr.trim(),
-          exitCode: code ?? -1,
-        })
-      }
-    })
-
-    child.on('error', (error) => {
-      clearTimeout(timeoutId)
-      resolve({
-        success: false,
-        error: `Failed to execute command: ${error.message}`,
-        exitCode: -1,
-      })
-    })
-  })
 }
 
 /**
