@@ -282,7 +282,7 @@ export function savePrd(filePath: string, prd: PrdJson): void {
 
 /**
  * Convert PRD to Markdown format
- * Simple format: Task name with sub-items
+ * Format: # Feature: Name with ## Requirements and ## Acceptance Criteria sections
  */
 function prdToMarkdown(prd: PrdJson): string {
   const lines: string[] = []
@@ -313,46 +313,47 @@ function prdToMarkdown(prd: PrdJson): string {
     lines.push('')
 
     for (const item of items) {
-      // Task header with status indicator
+      // Feature header with status indicator
       const statusIndicator =
         item.status === 'done'
           ? '[DONE] '
           : item.status === 'working'
             ? '[WORKING] '
             : ''
-      lines.push(`### ${statusIndicator}${item.description}`)
+      lines.push(`# Feature: ${statusIndicator}${item.description}`)
+      lines.push('')
 
-      // Sub-items from acceptance criteria
-      if (item.acceptanceCriteria && item.acceptanceCriteria.length > 0) {
-        for (const criterion of item.acceptanceCriteria) {
-          lines.push(`- ${criterion.description}`)
+      // Requirements section
+      if (item.requirements && item.requirements.length > 0) {
+        lines.push('## Requirements')
+        for (const req of item.requirements) {
+          lines.push(`- ${req}`)
         }
+        lines.push('')
       }
 
-      // Legacy steps support
+      // Acceptance Criteria section with checkboxes
+      if (item.acceptanceCriteria && item.acceptanceCriteria.length > 0) {
+        lines.push('## Acceptance Criteria')
+        for (const criterion of item.acceptanceCriteria) {
+          const checkbox = criterion.done ? '[x]' : '[ ]'
+          lines.push(`- ${checkbox} ${criterion.description}`)
+        }
+        lines.push('')
+      }
+
+      // Legacy steps support - convert to acceptance criteria format
       if (
         (!item.acceptanceCriteria || item.acceptanceCriteria.length === 0) &&
         item.steps &&
         item.steps.length > 0
       ) {
+        lines.push('## Acceptance Criteria')
         for (const step of item.steps) {
-          lines.push(`- ${step}`)
+          lines.push(`- [ ] ${step}`)
         }
+        lines.push('')
       }
-
-      // Requirements as sub-items if no acceptance criteria or steps
-      if (
-        (!item.acceptanceCriteria || item.acceptanceCriteria.length === 0) &&
-        (!item.steps || item.steps.length === 0) &&
-        item.requirements &&
-        item.requirements.length > 0
-      ) {
-        for (const req of item.requirements) {
-          lines.push(`- ${req}`)
-        }
-      }
-
-      lines.push('')
     }
   }
 
