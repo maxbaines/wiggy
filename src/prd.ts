@@ -91,9 +91,14 @@ function parseMarkdownPrd(content: string): PrdJson {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
 
-    // Detect PRD title (# Title)
+    // Detect PRD title (# Title) - but not Feature headers
     const titleMatch = line.match(/^#\s+(.+)$/)
-    if (titleMatch && !titleMatch[1].toLowerCase().startsWith('feature')) {
+    if (
+      titleMatch &&
+      !titleMatch[1].toLowerCase().startsWith('feature') &&
+      !titleMatch[1].toLowerCase().includes('[done]') &&
+      !titleMatch[1].toLowerCase().includes('[working]')
+    ) {
       prdName = titleMatch[1].trim()
       continue
     }
@@ -127,6 +132,23 @@ function parseMarkdownPrd(content: string): PrdJson {
       continue
     }
 
+    // IMPORTANT: Detect section headers BEFORE feature headers
+    // This prevents ## Requirements and ## Acceptance Criteria from being skipped
+    if (line.match(/^##\s*Requirements/i)) {
+      currentSection = 'requirements'
+      continue
+    }
+
+    if (line.match(/^##\s*Acceptance\s*Criteria/i)) {
+      currentSection = 'acceptance'
+      continue
+    }
+
+    if (line.match(/^##\s*Steps/i)) {
+      currentSection = 'steps'
+      continue
+    }
+
     // Detect Feature header (# Feature: Name or ## Feature: Name)
     const featureMatch = line.match(/^#{1,2}\s+(?:Feature:\s*)?(.+)$/)
     if (featureMatch && !line.toLowerCase().includes('priority')) {
@@ -145,36 +167,32 @@ function parseMarkdownPrd(content: string): PrdJson {
         items.push(normalizeItem(currentItem, itemIndex++))
       }
 
+      // Extract and remove [DONE]/[WORKING] status from description
+      let description = featureMatch[1].trim().replace(/^Feature:\s*/i, '')
+      let extractedStatus: PrdItemStatus = 'pending'
+
+      // Handle multiple [DONE] prefixes (cleanup from previous bug)
+      while (description.startsWith('[DONE] ')) {
+        extractedStatus = 'done'
+        description = description.replace(/^\[DONE\]\s*/, '')
+      }
+      while (description.startsWith('[WORKING] ')) {
+        extractedStatus = 'working'
+        description = description.replace(/^\[WORKING\]\s*/, '')
+      }
+
       currentItem = {
         id: String(itemIndex + 1),
         category: 'general',
-        description: featureMatch[1].trim().replace(/^Feature:\s*/i, ''),
+        description,
         requirements: [],
         acceptanceCriteria: [],
         steps: [],
         priority: currentPriority,
-        passes: false,
-        status: 'pending',
+        passes: extractedStatus === 'done',
+        status: extractedStatus,
       }
       currentSection = 'none'
-      continue
-    }
-
-    // Detect Requirements section
-    if (line.match(/^##\s*Requirements/i)) {
-      currentSection = 'requirements'
-      continue
-    }
-
-    // Detect Acceptance Criteria section
-    if (line.match(/^##\s*Acceptance\s*Criteria/i)) {
-      currentSection = 'acceptance'
-      continue
-    }
-
-    // Detect Steps section (backwards compatibility)
-    if (line.match(/^##\s*Steps/i)) {
-      currentSection = 'steps'
       continue
     }
 
