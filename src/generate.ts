@@ -25,101 +25,54 @@ import { findClaudeCodePath } from './utils.ts'
  * System prompt for PRD generation
  * Based on Matt Pocock's Ralph Wiggum article recommendations
  */
-const PRD_GENERATION_PROMPT = `You are a PRD generator. Generate a structured PRD in Markdown format.
+const PRD_GENERATION_PROMPT = `You are a PRD generator. Return a structured JSON object.
 
-## CRITICAL FORMAT RULES (MUST FOLLOW)
+## OUTPUT FORMAT (MUST BE VALID JSON)
 
-Every feature MUST have this EXACT 3-part structure:
+Return ONLY a JSON object with this exact structure:
 
-# Feature: [Feature Name]
+{
+  "name": "Project Name",
+  "description": "Brief project description",
+  "items": [
+    {
+      "description": "Feature title",
+      "requirements": ["Implementation detail 1", "Implementation detail 2"],
+      "acceptanceCriteria": [
+        {"description": "Testable criterion 1", "done": false},
+        {"description": "Testable criterion 2", "done": false}
+      ],
+      "priority": "high"
+    }
+  ]
+}
 
-## Requirements
-- [Implementation detail 1]
-- [Implementation detail 2]
+## RULES
 
-## Acceptance Criteria
-- [ ] [Testable criterion 1]
-- [ ] [Testable criterion 2]
+1. Return ONLY valid JSON - no markdown, no code blocks, no explanations
+2. Every item MUST have: description, requirements (array), acceptanceCriteria (array), priority
+3. priority must be: "high", "medium", or "low"
+4. acceptanceCriteria items must have: description (string), done (boolean, always false for new items)
 
----
+## PRIORITY GUIDELINES
 
-WRONG FORMAT (DO NOT DO THIS):
-### Feature Name
-- some bullet
+- HIGH: Architecture, core abstractions, integration points
+- MEDIUM: Standard features, implementation
+- LOW: Polish, documentation, cleanup
 
-CORRECT FORMAT (DO THIS):
-# Feature: Feature Name
+## ACCEPTANCE CRITERIA GUIDELINES
 
-## Requirements
-- Implementation detail
+- Be specific and testable
+- Good: "User can log in with email and password"
+- Bad: "Auth works"
 
-## Acceptance Criteria
-- [ ] Testable criterion
+## REQUIREMENTS GUIDELINES
 
----
+- Implementation details of what needs to be built
+- Good: "Create user table with email, password_hash, created_at columns"
+- Bad: "Set up database"
 
-## PRD Structure
-
-# Project Name
-
-Brief description
-
-## High Priority
-
-# Feature: First High Priority Feature
-
-## Requirements
-- What needs to be built
-
-## Acceptance Criteria
-- [ ] How we verify it works
-
-# Feature: Second High Priority Feature
-
-## Requirements
-- Implementation details
-
-## Acceptance Criteria
-- [ ] Verification steps
-
-## Medium Priority
-
-# Feature: Medium Priority Feature
-
-## Requirements
-- Details
-
-## Acceptance Criteria
-- [ ] Tests
-
-## Low Priority
-
-# Feature: Low Priority Feature
-
-## Requirements
-- Details
-
-## Acceptance Criteria
-- [ ] Tests
-
----
-
-## Guidelines
-
-1. **Priority types:**
-   - HIGH: Architecture, core abstractions
-   - MEDIUM: Standard features
-   - LOW: Polish, documentation
-
-2. **Requirements:** What to build (implementation details)
-   **Acceptance Criteria:** How to verify (testable checkboxes with \`- [ ]\`)
-
-3. **Keep features atomic** - one logical change per feature
-
-## Output
-
-Return ONLY Markdown. No code blocks. No explanations.
-EVERY feature MUST have: # Feature: Name, ## Requirements, ## Acceptance Criteria`
+Return ONLY the JSON object.`
 
 /**
  * System prompt for AGENTS.md generation
@@ -225,6 +178,7 @@ async function generateWithAgent(
 
 /**
  * Generate a PRD from a natural language description
+ * Returns structured JSON from AI, then normalizes it
  */
 export async function generatePrd(
   description: string,
@@ -245,42 +199,38 @@ export async function generatePrd(
     prompt += `## Existing Files\n${options.existingFiles.slice(0, 50).join('\n')}\n\n`
   }
 
-  prompt += `Now generate the PRD in Markdown format.`
+  prompt += `Now generate the PRD as a JSON object.`
 
-  const markdown = await generateWithAgent(
+  const result = await generateWithAgent(
     prompt,
     PRD_GENERATION_PROMPT,
     config,
     { useTools: options.analyzeCodebase },
   )
 
-  // Clean up markdown
-  let cleanMarkdown = markdown
-  const mdMatch = markdown.match(/```(?:markdown|md)?\s*([\s\S]*?)```/)
-  if (mdMatch) {
-    cleanMarkdown = mdMatch[1].trim()
+  // Parse JSON response - handle code blocks if present
+  let jsonStr = result.trim()
+  const jsonMatch = result.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1].trim()
   }
 
-  // Write to temp file and parse it
-  const tempPath = join(config.workingDir, '.prd.tmp.md')
-  writeFileSync(tempPath, cleanMarkdown, 'utf-8')
-
-  // Import loadPrd to parse the markdown
-  const { loadPrd } = await import('./prd.ts')
-  const prd = loadPrd(tempPath)
-
-  // Clean up temp file
   try {
-    unlinkSync(tempPath)
-  } catch {
-    // Ignore cleanup errors
+    const parsed = JSON.parse(jsonStr)
+    return normalizePrd(parsed)
+  } catch (e) {
+    // If JSON parsing fails, try to extract JSON object from the response
+    const objectMatch = result.match(/\{[\s\S]*\}/)
+    if (objectMatch) {
+      try {
+        const parsed = JSON.parse(objectMatch[0])
+        return normalizePrd(parsed)
+      } catch {
+        // Fall through to error
+      }
+    }
+    throw new Error(`Failed to parse PRD JSON: ${e}`)
   }
-
-  if (!prd) {
-    throw new Error('Failed to parse generated PRD Markdown')
-  }
-
-  return prd
 }
 
 /**
