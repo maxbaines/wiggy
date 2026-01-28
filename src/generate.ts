@@ -39,26 +39,44 @@ Brief description of the project
 
 ## High Priority
 
-### Task Name
-- Brief sub-task or implementation detail
-- Another specific thing to do
-- Tests pass
+# Feature: Clear Feature Name
 
-### Another Task
-- Sub-task description
-- Another detail
+## Requirements
+- Specific requirement 1
+- Specific requirement 2
+
+## Acceptance Criteria
+- [ ] Testable criterion that defines "done"
+- [ ] Another verifiable criterion
+- [ ] Tests pass
+
+# Feature: Another Feature
+
+## Requirements
+- What this feature needs
+
+## Acceptance Criteria
+- [ ] How we know it's complete
 
 ## Medium Priority
 
-### Task Name
-- Sub-task
-- Another sub-task
+# Feature: Standard Feature
+
+## Requirements
+- Implementation details
+
+## Acceptance Criteria
+- [ ] Verification steps
 
 ## Low Priority
 
-### Polish Task
-- Detail
-- Another detail
+# Feature: Polish Task
+
+## Requirements
+- What needs polishing
+
+## Acceptance Criteria
+- [ ] Definition of done
 
 ## Guidelines
 
@@ -67,22 +85,22 @@ Brief description of the project
    - MEDIUM: Standard features, implementation
    - LOW: Polish, documentation, cleanup
 
-2. **Sub-items define the task:**
-   - Each sub-item is a brief description of what needs to be done
-   - Good: "Create user table with email, password_hash, created_at columns"
-   - Bad: "Set up database"
-   - Be specific and actionable
-   - Include "Tests pass" as a sub-item when relevant
+2. **Requirements vs Acceptance Criteria:**
+   - Requirements: What needs to be built (implementation details)
+   - Acceptance Criteria: How we verify it's done (testable checkboxes)
+   - Good criterion: "User can log in with email and password"
+   - Bad criterion: "Auth works"
 
-3. **Keep tasks atomic:**
-   - Each task should be completable in one iteration
-   - If a task is too large, break it into multiple tasks
-   - One logical change per task
+3. **Keep features atomic:**
+   - Each feature should be completable in one iteration
+   - If a feature is too large, break it into multiple features
+   - One logical change per feature
 
-4. **DO NOT include:**
-   - Completion markers or promise tags
-   - Checkboxes (the agent handles completion tracking)
-   - Verbose explanations
+4. **Format rules:**
+   - Use \`# Feature: Name\` for each feature (single # with Feature: prefix)
+   - Use \`## Requirements\` section with plain bullet points
+   - Use \`## Acceptance Criteria\` section with checkbox bullets \`- [ ]\`
+   - DO NOT include completion markers or promise tags
 
 ## Output
 
